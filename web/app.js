@@ -38,6 +38,9 @@ const I18N = {
     cabinet_chat_id: "Telegram Chat ID",
     cabinet_alerts_on: "Алерты ON",
     cabinet_alerts_off: "Алерты OFF",
+    cabinet_max_target: "MAX target/chat",
+    cabinet_max_on: "MAX ON",
+    cabinet_max_off: "MAX OFF",
     cabinet_watch: "Watch-правила",
     cabinet_watch_query: "Запрос",
     cabinet_watch_add: "Добавить правило",
@@ -97,6 +100,9 @@ const I18N = {
     cabinet_chat_id: "Telegram Chat ID",
     cabinet_alerts_on: "Alerts ON",
     cabinet_alerts_off: "Alerts OFF",
+    cabinet_max_target: "MAX target/chat",
+    cabinet_max_on: "MAX ON",
+    cabinet_max_off: "MAX OFF",
     cabinet_watch: "Watch Rules",
     cabinet_watch_query: "Query",
     cabinet_watch_add: "Add Rule",
@@ -125,6 +131,7 @@ let lastResults = [];
 let sortState = { key: "domain", dir: "asc" };
 let authState = { authenticated: false, user: null };
 let cabinetState = { profile: null, subscriptions: [], watchRules: [], history: [] };
+let cabinetRefreshTimer = null;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -369,6 +376,7 @@ function renderCabinetProfile(data) {
     ["disclaimer_version", data.disclaimer_version || "-"],
     ["disclaimer_accepted_at", formatDate(data.disclaimer_accepted_at)],
     ["alerts_enabled", data.alerts_enabled ? "true" : "false"],
+    ["max_alerts_enabled", data.max_alerts_enabled ? "true" : "false"],
     ["watch_rules_active", String(data.watch_rules_active || 0)],
   ];
   root.innerHTML = rows
@@ -406,6 +414,12 @@ function renderCabinetSubscriptions(items) {
       </article>`,
     )
     .join("");
+
+  const maxSub = items.find((item) => String(item.channel_type || "").toLowerCase() === "max");
+  const maxInput = document.getElementById("cabinet-max-target");
+  if (maxSub && maxInput && !maxInput.value.trim()) {
+    maxInput.value = String(maxSub.channel_target || "");
+  }
 }
 
 function renderCabinetWatchRules(items) {
@@ -729,6 +743,38 @@ document.getElementById("cabinet-alerts-off-btn").addEventListener("click", asyn
   }
 });
 
+document.getElementById("cabinet-max-on-btn").addEventListener("click", async () => {
+  try {
+    await api("/v1/cabinet/subscriptions/channel", {
+      method: "POST",
+      body: JSON.stringify({
+        channel_type: "max",
+        enabled: true,
+        target: document.getElementById("cabinet-max-target").value.trim() || null,
+      }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
+document.getElementById("cabinet-max-off-btn").addEventListener("click", async () => {
+  try {
+    await api("/v1/cabinet/subscriptions/channel", {
+      method: "POST",
+      body: JSON.stringify({
+        channel_type: "max",
+        enabled: false,
+        target: document.getElementById("cabinet-max-target").value.trim() || null,
+      }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
 document.getElementById("cabinet-watch-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
@@ -809,7 +855,10 @@ document.getElementById("cabinet-watch-list").addEventListener("click", async (e
 });
 
 document.getElementById("cabinet-watch-search").addEventListener("input", () => {
-  refreshCabinet();
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 250);
 });
 
 document.getElementById("cabinet-watch-status-filter").addEventListener("change", () => {

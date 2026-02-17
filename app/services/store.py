@@ -805,6 +805,71 @@ class PostgresStore:
             ).scalar_one_or_none()
             return active is not None
 
+    def set_channel_subscription_enabled(
+        self,
+        telegram_user_id: str,
+        channel_type: str,
+        channel_target: str | None,
+        enabled: bool,
+    ) -> bool:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return False
+
+            safe_channel_type = channel_type.strip().lower()
+            if safe_channel_type not in {"telegram", "max"}:
+                return False
+
+            status = "active" if enabled else "paused"
+            subs = session.execute(
+                select(UserSubscriptionModel)
+                .where(UserSubscriptionModel.user_id == user.id)
+                .where(UserSubscriptionModel.channel_type == safe_channel_type)
+            ).scalars()
+            subs_list = list(subs)
+
+            if subs_list:
+                for sub in subs_list:
+                    sub.status = status
+                    if channel_target:
+                        sub.channel_target = str(channel_target)
+                    sub.updated_at = datetime.now(timezone.utc)
+            elif channel_target:
+                session.add(
+                    UserSubscriptionModel(
+                        user_id=user.id,
+                        channel_type=safe_channel_type,
+                        channel_target=str(channel_target),
+                        alert_types={"default": True},
+                        status=status,
+                    )
+                )
+            else:
+                return False
+
+            session.commit()
+            return True
+
+    def get_channel_alerts_enabled(self, telegram_user_id: str, channel_type: str) -> bool:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return False
+
+            active = session.execute(
+                select(UserSubscriptionModel.id)
+                .where(UserSubscriptionModel.user_id == user.id)
+                .where(UserSubscriptionModel.channel_type == channel_type.strip().lower())
+                .where(UserSubscriptionModel.status == "active")
+                .limit(1)
+            ).scalar_one_or_none()
+            return active is not None
+
     def log_bot_event(
         self,
         event_type: str,

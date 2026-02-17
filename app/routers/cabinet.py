@@ -14,6 +14,12 @@ class TelegramSubscriptionToggleRequest(BaseModel):
     chat_id: str | None = None
 
 
+class ChannelSubscriptionToggleRequest(BaseModel):
+    channel_type: str
+    enabled: bool
+    target: str | None = None
+
+
 class WatchRuleCreateRequest(BaseModel):
     query: str = Field(min_length=2, max_length=256)
     tlds: list[str] = Field(default_factory=list)
@@ -41,6 +47,7 @@ class CabinetProfileResponse(BaseModel):
     disclaimer_accepted_at: str | None = None
     disclaimer_version: str | None = None
     alerts_enabled: bool
+    max_alerts_enabled: bool
     watch_rules_active: int
 
 
@@ -79,6 +86,7 @@ async def cabinet_profile(request: Request) -> CabinetProfileResponse:
         disclaimer_accepted_at=user.disclaimer_accepted_at.isoformat() if user.disclaimer_accepted_at else None,
         disclaimer_version=user.disclaimer_version,
         alerts_enabled=store.get_telegram_alerts_enabled(user.telegram_user_id),
+        max_alerts_enabled=store.get_channel_alerts_enabled(user.telegram_user_id, "max"),
         watch_rules_active=store.get_watch_rules_count(user.telegram_user_id),
     )
 
@@ -113,6 +121,34 @@ async def cabinet_subscriptions_telegram_toggle(
         telegram_user_id=auth_user.telegram_user_id,
         telegram_chat_id=chat_id,
         payload={"enabled": payload.enabled},
+    )
+
+    return CabinetSubscriptionsResponse(items=store.list_telegram_subscriptions(auth_user.telegram_user_id))
+
+
+@router.post("/subscriptions/channel", response_model=CabinetSubscriptionsResponse)
+async def cabinet_subscriptions_channel_toggle(
+    payload: ChannelSubscriptionToggleRequest,
+    request: Request,
+) -> CabinetSubscriptionsResponse:
+    auth_user = _require_user(request)
+    channel_type = payload.channel_type.strip().lower()
+    if channel_type not in {"telegram", "max"}:
+        raise HTTPException(status_code=400, detail="unsupported channel_type")
+
+    ok = store.set_channel_subscription_enabled(
+        telegram_user_id=auth_user.telegram_user_id,
+        channel_type=channel_type,
+        channel_target=payload.target,
+        enabled=payload.enabled,
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail="failed to update channel subscription")
+
+    store.log_bot_event(
+        "cabinet_channel_toggle",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"channel_type": channel_type, "enabled": payload.enabled, "target": payload.target},
     )
 
     return CabinetSubscriptionsResponse(items=store.list_telegram_subscriptions(auth_user.telegram_user_id))
