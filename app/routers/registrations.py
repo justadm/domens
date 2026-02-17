@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.config import settings
 from app.schemas import (
     ConfirmRegistrationRequest,
     ConfirmRegistrationResponse,
@@ -9,7 +10,7 @@ from app.services.registrar import RegistrarClient
 from app.state import store
 
 router = APIRouter(prefix="/v1/registrations", tags=["registrations"])
-registrar_client = RegistrarClient()
+registrar_client = RegistrarClient(provider=settings.registrar_provider)
 
 
 @router.post("/confirm", response_model=ConfirmRegistrationResponse)
@@ -49,10 +50,15 @@ async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
 
     store.set_order_status(order_id, "sent_to_registrar")
     registrar_response = await registrar_client.register_domain(order.domain)
-    store.set_order_status(order_id, "registered")
+    if registrar_response.get("result") == "registered":
+        store.set_order_status(order_id, "registered")
+        status = "registered"
+    else:
+        store.set_order_status(order_id, "failed")
+        status = "failed"
 
     return ExecuteRegistrationResponse(
         order_id=order_id,
-        status="registered",
+        status=status,
         registrar_response=registrar_response,
     )

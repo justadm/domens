@@ -57,8 +57,9 @@ class ExecuteRegistrationResponse(BaseModel):
 
 
 class TelegramWebhookRequest(BaseModel):
-    callback_data: str
-    from_user: str
+    callback_data: str | None = None
+    from_user: str | None = None
+    callback_query: dict | None = None
 
 
 class HealthResponse(BaseModel):

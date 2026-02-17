@@ -1,5 +1,8 @@
+import asyncio
+
 from fastapi import APIRouter
 
+from app.config import settings
 from app.schemas import (
     CandidateIngestRequest,
     CandidateIngestResponse,
@@ -9,23 +12,28 @@ from app.schemas import (
 )
 from app.services.domain_checker import infer_status
 from app.services.domain_scoring import score_domain
+from app.services.timeweb_api import TimewebApiClient
 
 router = APIRouter(prefix="/v1/domains", tags=["domains"])
+timeweb_client = TimewebApiClient(
+    base_url=settings.timeweb_api_base_url, api_token=settings.timeweb_api_token
+)
 
 
 @router.post("/check", response_model=DomainCheckResponse)
 async def check_domains(payload: DomainCheckRequest) -> DomainCheckResponse:
-    results: list[DomainCheckResult] = []
-    for domain in payload.domains:
-        status, eta = infer_status(domain)
-        results.append(
-            DomainCheckResult(
-                domain=domain,
-                status=status,
-                score=score_domain(domain),
-                drop_time_estimated_at=eta,
-            )
+    async def check_one(domain: str) -> DomainCheckResult:
+        status, eta = await infer_status(domain, timeweb_client=timeweb_client)
+        return DomainCheckResult(
+            domain=domain,
+            status=status,
+            score=score_domain(domain),
+            drop_time_estimated_at=eta,
         )
+
+    results: list[DomainCheckResult] = []
+    if payload.domains:
+        results = await asyncio.gather(*(check_one(domain) for domain in payload.domains))
 
     return DomainCheckResponse(results=results)
 

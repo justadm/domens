@@ -36,6 +36,16 @@ docker compose up --build -d
 - API: http://127.0.0.1:8080/health
 - Swagger: http://127.0.0.1:8080/docs
 
+## Make команды
+```bash
+cd /Users/just/projects/domens
+make up
+make ps
+make health
+make logs
+make down
+```
+
 ## Telegram flow (MVP)
 1. Сервис находит домен-кандидат.
 2. Создает алерт с токеном подтверждения.
@@ -44,6 +54,11 @@ docker compose up --build -d
    - `Зарегистрировать`
 4. При нажатии `Зарегистрировать` идет callback на backend.
 5. Backend создает задачу регистрации через API регистратора и присылает результат.
+
+## Провайдеры
+- Регистратор: Timeweb (`TIMEWEB_API_*`), используется endpoint `POST /api/v1/add-domain/{fqdn}`.
+- Проверка домена: Timeweb (`GET /api/v1/check-domain/{fqdn}`) с fallback на эвристику.
+- DR-профиль: Selectel переменные уже заведены в `.env` для следующего этапа интеграции.
 
 ## Ограничения MVP
 - Хранилище сейчас in-memory для быстрого старта API.
