@@ -161,6 +161,10 @@ def _get_current_user(request: Request) -> AuthUserResponse | None:
     )
 
 
+def get_authenticated_user(request: Request) -> AuthUserResponse | None:
+    return _get_current_user(request)
+
+
 @router.get("/telegram/widget-config", response_model=TelegramWidgetConfigResponse)
 async def telegram_widget_config() -> TelegramWidgetConfigResponse:
     enabled = bool(settings.telegram_bot_username and settings.telegram_bot_token)

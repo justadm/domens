@@ -781,3 +781,56 @@ class PostgresStore:
             )
             session.add(event)
             session.commit()
+
+    def list_telegram_subscriptions(self, telegram_user_id: str) -> list[dict]:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return []
+
+            rows = session.execute(
+                select(UserSubscriptionModel)
+                .where(UserSubscriptionModel.user_id == user.id)
+                .order_by(desc(UserSubscriptionModel.created_at))
+            ).scalars()
+
+            return [
+                {
+                    "id": str(row.id),
+                    "channel_type": row.channel_type,
+                    "channel_target": row.channel_target,
+                    "status": row.status,
+                    "alert_types": row.alert_types or {},
+                    "created_at": row.created_at.isoformat(),
+                    "updated_at": row.updated_at.isoformat(),
+                }
+                for row in rows
+            ]
+
+    def list_bot_events(self, telegram_user_id: str, limit: int = 50) -> list[dict]:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return []
+
+            rows = session.execute(
+                select(BotEventModel)
+                .where(BotEventModel.user_id == user.id)
+                .order_by(desc(BotEventModel.created_at))
+                .limit(max(1, min(limit, 200)))
+            ).scalars()
+
+            return [
+                {
+                    "id": str(row.id),
+                    "event_type": row.event_type,
+                    "telegram_chat_id": row.telegram_chat_id,
+                    "payload": row.payload or {},
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in rows
+            ]

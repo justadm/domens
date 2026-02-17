@@ -31,6 +31,22 @@ const I18N = {
     auth_logged_as: "Вход:",
     auth_logout: "Выйти",
     auth_login_hint: "Вход через Telegram",
+    cabinet_title: "Кабинет",
+    cabinet_refresh: "Обновить",
+    cabinet_profile: "Профиль",
+    cabinet_subscriptions: "Подписки",
+    cabinet_chat_id: "Telegram Chat ID",
+    cabinet_alerts_on: "Алерты ON",
+    cabinet_alerts_off: "Алерты OFF",
+    cabinet_watch: "Watch-правила",
+    cabinet_watch_query: "Запрос",
+    cabinet_watch_add: "Добавить правило",
+    cabinet_history: "История",
+    cabinet_login_required: "Войдите через Telegram, чтобы открыть кабинет",
+    cabinet_empty: "Пусто",
+    cabinet_pause: "Пауза",
+    cabinet_resume: "Возобновить",
+    cabinet_delete: "Удалить",
   },
   en: {
     lang: "Language",
@@ -64,6 +80,22 @@ const I18N = {
     auth_logged_as: "Signed in:",
     auth_logout: "Logout",
     auth_login_hint: "Sign in with Telegram",
+    cabinet_title: "Cabinet",
+    cabinet_refresh: "Refresh",
+    cabinet_profile: "Profile",
+    cabinet_subscriptions: "Subscriptions",
+    cabinet_chat_id: "Telegram Chat ID",
+    cabinet_alerts_on: "Alerts ON",
+    cabinet_alerts_off: "Alerts OFF",
+    cabinet_watch: "Watch Rules",
+    cabinet_watch_query: "Query",
+    cabinet_watch_add: "Add Rule",
+    cabinet_history: "History",
+    cabinet_login_required: "Sign in with Telegram to open cabinet",
+    cabinet_empty: "Empty",
+    cabinet_pause: "Pause",
+    cabinet_resume: "Resume",
+    cabinet_delete: "Delete",
   },
 };
 
@@ -71,6 +103,7 @@ let currentLang = localStorage.getItem("domens_lang") || "ru";
 let currentTheme = localStorage.getItem("domens_theme") || "dark";
 let lastResults = [];
 let sortState = { key: "domain", dir: "asc" };
+let authState = { authenticated: false, user: null };
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -102,6 +135,15 @@ function linesToDomains(value) {
 
 function put(el, data) {
   el.textContent = JSON.stringify(data, null, 2);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function formatDate(value) {
@@ -276,6 +318,143 @@ async function refreshActivity() {
   }
 }
 
+function setCabinetMessage(message) {
+  const profileEl = document.getElementById("cabinet-profile");
+  const subsEl = document.getElementById("cabinet-subs");
+  const watchEl = document.getElementById("cabinet-watch-list");
+  const historyEl = document.getElementById("cabinet-history");
+  if (profileEl) profileEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (subsEl) subsEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (watchEl) watchEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (historyEl) historyEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+}
+
+function renderCabinetProfile(data) {
+  const root = document.getElementById("cabinet-profile");
+  if (!root) return;
+  const rows = [
+    ["telegram_user_id", data.telegram_user_id || "-"],
+    ["username", data.username ? `@${data.username}` : "-"],
+    ["first_name", data.first_name || "-"],
+    ["locale", data.locale || "-"],
+    ["chat_id", data.chat_id || "-"],
+    ["disclaimer_version", data.disclaimer_version || "-"],
+    ["disclaimer_accepted_at", formatDate(data.disclaimer_accepted_at)],
+    ["alerts_enabled", data.alerts_enabled ? "true" : "false"],
+    ["watch_rules_active", String(data.watch_rules_active || 0)],
+  ];
+  root.innerHTML = rows
+    .map(
+      ([key, value]) =>
+        `<div class="kv-row"><span class="kv-key">${escapeHtml(key)}</span><span class="kv-value">${escapeHtml(value)}</span></div>`,
+    )
+    .join("");
+  const chatInput = document.getElementById("cabinet-chat-id");
+  if (chatInput && data.chat_id) {
+    chatInput.value = data.chat_id;
+  }
+}
+
+function renderCabinetSubscriptions(items) {
+  const root = document.getElementById("cabinet-subs");
+  const dict = I18N[currentLang];
+  if (!root) return;
+  if (!items || !items.length) {
+    root.innerHTML = `<p class="feed-empty">${dict.cabinet_empty}</p>`;
+    return;
+  }
+  root.innerHTML = items
+    .map(
+      (item) => `
+      <article class="list-row">
+        <div class="feed-row">
+          <strong>${escapeHtml(item.channel_type)}</strong>
+          <span class="feed-status">${escapeHtml(item.status)}</span>
+        </div>
+        <div class="feed-row">
+          <span>${escapeHtml(item.channel_target || "-")}</span>
+          <time>${formatDate(item.updated_at)}</time>
+        </div>
+      </article>`,
+    )
+    .join("");
+}
+
+function renderCabinetWatchRules(items) {
+  const root = document.getElementById("cabinet-watch-list");
+  const dict = I18N[currentLang];
+  if (!root) return;
+  if (!items || !items.length) {
+    root.innerHTML = `<p class="feed-empty">${dict.cabinet_empty}</p>`;
+    return;
+  }
+  root.innerHTML = items
+    .map(
+      (item) => `
+      <article class="list-row">
+        <div class="feed-row">
+          <strong>${escapeHtml(item.query)}</strong>
+          <span class="feed-status">${escapeHtml(item.status)}</span>
+        </div>
+        <div class="feed-row">
+          <span>${escapeHtml(item.id)}</span>
+          <span>score >= ${item.min_score ?? "-"}</span>
+        </div>
+        <div class="list-row-actions">
+          <button type="button" class="mini-btn js-watch-action" data-action="paused" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_pause}</button>
+          <button type="button" class="mini-btn js-watch-action" data-action="active" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_resume}</button>
+          <button type="button" class="mini-btn js-watch-action" data-action="deleted" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_delete}</button>
+        </div>
+      </article>`,
+    )
+    .join("");
+}
+
+function renderCabinetHistory(items) {
+  const root = document.getElementById("cabinet-history");
+  const dict = I18N[currentLang];
+  if (!root) return;
+  if (!items || !items.length) {
+    root.innerHTML = `<p class="feed-empty">${dict.cabinet_empty}</p>`;
+    return;
+  }
+  root.innerHTML = items
+    .map(
+      (item) => `
+      <article class="list-row">
+        <div class="feed-row">
+          <strong>${escapeHtml(item.event_type)}</strong>
+          <time>${formatDate(item.created_at)}</time>
+        </div>
+        <pre class="output">${escapeHtml(JSON.stringify(item.payload || {}, null, 2))}</pre>
+      </article>`,
+    )
+    .join("");
+}
+
+async function refreshCabinet() {
+  const dict = I18N[currentLang];
+  if (!authState.authenticated || !authState.user) {
+    setCabinetMessage(dict.cabinet_login_required);
+    return;
+  }
+
+  try {
+    const [profile, subs, watchRules, history] = await Promise.all([
+      api("/v1/cabinet/profile"),
+      api("/v1/cabinet/subscriptions"),
+      api("/v1/cabinet/watch-rules"),
+      api("/v1/cabinet/history?limit=40"),
+    ]);
+    renderCabinetProfile(profile);
+    renderCabinetSubscriptions(subs.items || []);
+    renderCabinetWatchRules(watchRules.items || []);
+    renderCabinetHistory(history.items || []);
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+}
+
 function renderAuthState(authenticated, user) {
   const dict = I18N[currentLang];
   const userLine = document.getElementById("auth-user-line");
@@ -291,20 +470,24 @@ function renderAuthState(authenticated, user) {
     userLine.textContent = `${dict.auth_logged_as} ${username}`;
     logoutBtn.classList.remove("hidden");
     widgetRoot.classList.add("hidden");
+    authState = { authenticated: true, user };
     return;
   }
 
   userLine.textContent = `${dict.auth_guest}. ${dict.auth_login_hint}`;
   logoutBtn.classList.add("hidden");
   widgetRoot.classList.remove("hidden");
+  authState = { authenticated: false, user: null };
 }
 
 async function refreshAuth() {
   try {
     const data = await api("/v1/auth/me");
     renderAuthState(Boolean(data.authenticated), data.user || null);
+    await refreshCabinet();
   } catch {
     renderAuthState(false, null);
+    await refreshCabinet();
   }
 }
 
@@ -454,6 +637,76 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
   await refreshAuth();
 });
 
+document.getElementById("cabinet-refresh-btn").addEventListener("click", async () => {
+  await refreshCabinet();
+});
+
+document.getElementById("cabinet-alerts-on-btn").addEventListener("click", async () => {
+  try {
+    await api("/v1/cabinet/subscriptions/telegram", {
+      method: "POST",
+      body: JSON.stringify({
+        enabled: true,
+        chat_id: document.getElementById("cabinet-chat-id").value.trim() || null,
+      }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
+document.getElementById("cabinet-alerts-off-btn").addEventListener("click", async () => {
+  try {
+    await api("/v1/cabinet/subscriptions/telegram", {
+      method: "POST",
+      body: JSON.stringify({
+        enabled: false,
+        chat_id: document.getElementById("cabinet-chat-id").value.trim() || null,
+      }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
+document.getElementById("cabinet-watch-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/v1/cabinet/watch-rules", {
+      method: "POST",
+      body: JSON.stringify({
+        query: document.getElementById("cabinet-watch-query").value.trim(),
+      }),
+    });
+    document.getElementById("cabinet-watch-query").value = "";
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
+document.getElementById("cabinet-watch-list").addEventListener("click", async (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (!target.classList.contains("js-watch-action")) return;
+
+  const ruleId = target.dataset.ruleId;
+  const status = target.dataset.action;
+  if (!ruleId || !status) return;
+
+  try {
+    await api(`/v1/cabinet/watch-rules/${ruleId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
 applyTheme(currentTheme);
 applyLanguage(currentLang);
 setupMenu();
@@ -462,5 +715,6 @@ initTelegramAuthWidget();
 refreshAuth();
 refreshHealth();
 refreshActivity();
+refreshCabinet();
 setInterval(refreshHealth, 30000);
 setInterval(refreshActivity, 45000);

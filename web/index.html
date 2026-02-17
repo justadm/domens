@@ -36,6 +36,14 @@
         <nav class="sidebar-nav">
           <a class="nav-item active js-menu-link" href="#overview-section">Обзор</a>
 
+          <details class="nav-group" data-group="cabinet" open>
+            <summary>Кабинет</summary>
+            <a class="nav-sub js-menu-link" href="#cabinet-section">Профиль</a>
+            <a class="nav-sub js-menu-link" href="#cabinet-section">Подписки</a>
+            <a class="nav-sub js-menu-link" href="#cabinet-section">Watch-правила</a>
+            <a class="nav-sub js-menu-link" href="#cabinet-section">История</a>
+          </details>
+
           <details class="nav-group" data-group="dns" open>
             <summary>DNS</summary>
             <a class="nav-sub active js-menu-link" href="#scanner-section">Рейтинги доменов</a>
@@ -117,6 +125,52 @@
               <p data-i18n="metric_score">Средний Score</p>
               <h3 id="metric-score">0</h3>
             </article>
+          </section>
+
+          <section class="panel cabinet" id="cabinet-section">
+            <div class="section-head">
+              <h2 data-i18n="cabinet_title">Кабинет</h2>
+              <button type="button" class="btn-ghost" id="cabinet-refresh-btn" data-i18n="cabinet_refresh">Обновить</button>
+            </div>
+
+            <div class="cabinet-grid">
+              <article class="cabinet-card">
+                <h3 data-i18n="cabinet_profile">Профиль</h3>
+                <div id="cabinet-profile" class="kv-list"></div>
+              </article>
+
+              <article class="cabinet-card">
+                <h3 data-i18n="cabinet_subscriptions">Подписки</h3>
+                <form id="cabinet-sub-form" class="form-stack">
+                  <label>
+                    <span data-i18n="cabinet_chat_id">Telegram Chat ID</span>
+                    <input id="cabinet-chat-id" placeholder="-100..." />
+                  </label>
+                  <div class="inline-actions">
+                    <button type="button" class="btn-primary" id="cabinet-alerts-on-btn" data-i18n="cabinet_alerts_on">Алерты ON</button>
+                    <button type="button" class="btn-secondary" id="cabinet-alerts-off-btn" data-i18n="cabinet_alerts_off">Алерты OFF</button>
+                  </div>
+                </form>
+                <div id="cabinet-subs" class="list-box"></div>
+              </article>
+
+              <article class="cabinet-card">
+                <h3 data-i18n="cabinet_watch">Watch-правила</h3>
+                <form id="cabinet-watch-form" class="form-stack">
+                  <label>
+                    <span data-i18n="cabinet_watch_query">Запрос</span>
+                    <input id="cabinet-watch-query" placeholder="ai fintech crypto" />
+                  </label>
+                  <button type="submit" class="btn-primary" data-i18n="cabinet_watch_add">Добавить правило</button>
+                </form>
+                <div id="cabinet-watch-list" class="list-box"></div>
+              </article>
+
+              <article class="cabinet-card">
+                <h3 data-i18n="cabinet_history">История</h3>
+                <div id="cabinet-history" class="list-box"></div>
+              </article>
+            </div>
           </section>
 
           <section class="panel checker" id="scanner-section">
