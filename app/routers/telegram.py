@@ -127,6 +127,23 @@ def _seed_watch_queries() -> list[str]:
     ]
 
 
+def _focus_core_queries() -> set[str]:
+    return {
+        "domain radar",
+        "domain catcher",
+        "drop catch",
+        "name scout",
+        "dns monitor",
+        "agent platform",
+        "agent cloud",
+        "mcp cloud",
+        "llm infra",
+        "inference api",
+        "dev tools",
+        "cloud ops",
+    }
+
+
 def _extract_message(payload: dict) -> tuple[str, str, str, str, str | None, str | None] | None:
     message = payload.get("message") if isinstance(payload, dict) else None
     if not isinstance(message, dict):
@@ -206,6 +223,7 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
         "/profile - профиль и статус\n"
         "/watch add <query> - добавить правило\n"
         "/watch seed - добавить стартовый набор (30)\n"
+        "/watch focus core|wide|status - профиль watch-правил\n"
         "/watch list - список правил\n"
         "/watch pause <id> - пауза правила\n"
         "/watch resume <id> - возобновить правило\n"
@@ -314,6 +332,59 @@ async def _handle_watch(chat_id: str, user_id: str, text: str) -> dict:
             payload={"added": added},
         )
         return {"ok": True, "action": "watch_seed_done", "added": added}
+
+    if action == "focus":
+        mode = parts[2].strip().lower() if len(parts) >= 3 else ""
+        if mode not in {"core", "wide", "status"}:
+            await send_telegram_text(chat_id, "Формат: /watch focus core|wide|status")
+            return {"ok": True, "action": "watch_focus_bad_format"}
+
+        rules = store.list_watch_rules(user_id)
+        seed_set = {item.strip().lower() for item in _seed_watch_queries()}
+        core_set = _focus_core_queries()
+
+        if mode == "status":
+            seed_rules = [item for item in rules if str(item.get("query") or "").strip().lower() in seed_set]
+            seed_active = sum(1 for item in seed_rules if str(item.get("status")) == "active")
+            custom_active = sum(
+                1
+                for item in rules
+                if str(item.get("status")) == "active"
+                and str(item.get("query") or "").strip().lower() not in seed_set
+            )
+            await send_telegram_text(
+                chat_id,
+                (
+                    f"Watch focus status:\n"
+                    f"- seed active: {seed_active}/{len(seed_rules)}\n"
+                    f"- custom active: {custom_active}\n"
+                    f"- core profile size: {len(core_set)}"
+                ),
+            )
+            return {"ok": True, "action": "watch_focus_status"}
+
+        changed = 0
+        for item in rules:
+            query = str(item.get("query") or "").strip().lower()
+            if query not in seed_set:
+                continue
+            target_status = "active" if (mode == "wide" or query in core_set) else "paused"
+            if str(item.get("status")) == target_status:
+                continue
+            if store.set_watch_rule_status(user_id, str(item.get("id")), target_status):
+                changed += 1
+
+        await send_telegram_text(
+            chat_id,
+            f"Watch focus: {mode}. Обновлено правил: {changed}. Проверка: /watch focus status",
+        )
+        store.log_bot_event(
+            "watch_focus",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"mode": mode, "changed": changed},
+        )
+        return {"ok": True, "action": "watch_focus_done", "mode": mode, "changed": changed}
 
     if action == "add":
         query = " ".join(parts[2:]).strip() if len(parts) > 2 else ""
