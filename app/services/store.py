@@ -674,6 +674,54 @@ class PostgresStore:
                 for r in rows
             ]
 
+    def update_watch_rule(
+        self,
+        telegram_user_id: str,
+        rule_id: str,
+        query: str | None = None,
+        tlds: list[str] | None = None,
+        min_score: float | None = None,
+        max_price_usd: float | None = None,
+        min_score_set: bool = False,
+        max_price_usd_set: bool = False,
+    ) -> bool:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return False
+
+            try:
+                rule_uuid = uuid.UUID(rule_id)
+            except ValueError:
+                return False
+
+            rule = session.execute(
+                select(UserWatchRuleModel)
+                .where(UserWatchRuleModel.id == rule_uuid)
+                .where(UserWatchRuleModel.user_id == user.id)
+                .limit(1)
+            ).scalar_one_or_none()
+            if not rule:
+                return False
+
+            if query is not None:
+                query_clean = query.strip()
+                if len(query_clean) < 2:
+                    return False
+                rule.watch_query = query_clean
+            if tlds is not None:
+                rule.tlds = {"items": tlds}
+            if min_score_set:
+                rule.min_score = min_score
+            if max_price_usd_set:
+                rule.max_price_usd = max_price_usd
+
+            rule.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return True
+
     def set_watch_rule_status(self, telegram_user_id: str, rule_id: str, status: str) -> bool:
         with self._session() as session:
             user = session.execute(
@@ -834,3 +882,27 @@ class PostgresStore:
                 }
                 for row in rows
             ]
+
+    def list_bot_events_filtered(
+        self,
+        telegram_user_id: str,
+        limit: int = 50,
+        event_type: str | None = None,
+        query_text: str | None = None,
+    ) -> list[dict]:
+        items = self.list_bot_events(telegram_user_id=telegram_user_id, limit=max(1, min(limit, 200)))
+        filtered = items
+
+        if event_type:
+            target = event_type.strip().lower()
+            filtered = [item for item in filtered if str(item.get("event_type", "")).lower() == target]
+
+        if query_text:
+            q = query_text.strip().lower()
+            filtered = [
+                item
+                for item in filtered
+                if q in str(item.get("event_type", "")).lower() or q in str(item.get("payload", "")).lower()
+            ]
+
+        return filtered[: max(1, min(limit, 200))]

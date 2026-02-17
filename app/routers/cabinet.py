@@ -25,6 +25,13 @@ class WatchRuleStatusRequest(BaseModel):
     status: str
 
 
+class WatchRuleUpdateRequest(BaseModel):
+    query: str | None = Field(default=None, min_length=2, max_length=256)
+    tlds: list[str] | None = None
+    min_score: float | None = None
+    max_price_usd: float | None = None
+
+
 class CabinetProfileResponse(BaseModel):
     telegram_user_id: str
     username: str | None = None
@@ -112,9 +119,22 @@ async def cabinet_subscriptions_telegram_toggle(
 
 
 @router.get("/watch-rules", response_model=CabinetWatchRulesResponse)
-async def cabinet_watch_rules(request: Request) -> CabinetWatchRulesResponse:
+async def cabinet_watch_rules(
+    request: Request,
+    status: str | None = None,
+    search: str | None = None,
+) -> CabinetWatchRulesResponse:
     auth_user = _require_user(request)
-    return CabinetWatchRulesResponse(items=store.list_watch_rules(auth_user.telegram_user_id))
+    items = store.list_watch_rules(auth_user.telegram_user_id)
+
+    if status:
+        target = status.strip().lower()
+        items = [item for item in items if str(item.get("status", "")).lower() == target]
+    if search:
+        q = search.strip().lower()
+        items = [item for item in items if q in str(item.get("query", "")).lower()]
+
+    return CabinetWatchRulesResponse(items=items)
 
 
 @router.post("/watch-rules", response_model=CabinetWatchRulesResponse)
@@ -163,7 +183,52 @@ async def cabinet_watch_rule_status(
     return CabinetWatchRulesResponse(items=store.list_watch_rules(auth_user.telegram_user_id))
 
 
-@router.get("/history", response_model=CabinetHistoryResponse)
-async def cabinet_history(request: Request, limit: int = 40) -> CabinetHistoryResponse:
+@router.patch("/watch-rules/{rule_id}", response_model=CabinetWatchRulesResponse)
+async def cabinet_watch_rule_update(
+    rule_id: str,
+    payload: WatchRuleUpdateRequest,
+    request: Request,
+) -> CabinetWatchRulesResponse:
     auth_user = _require_user(request)
-    return CabinetHistoryResponse(items=store.list_bot_events(auth_user.telegram_user_id, limit=limit))
+    fields = payload.model_fields_set
+    if not fields:
+        raise HTTPException(status_code=400, detail="empty update payload")
+
+    ok = store.update_watch_rule(
+        telegram_user_id=auth_user.telegram_user_id,
+        rule_id=rule_id,
+        query=payload.query if "query" in fields else None,
+        tlds=payload.tlds if "tlds" in fields else None,
+        min_score=payload.min_score,
+        max_price_usd=payload.max_price_usd,
+        min_score_set="min_score" in fields,
+        max_price_usd_set="max_price_usd" in fields,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="watch rule not found or invalid payload")
+
+    store.log_bot_event(
+        "cabinet_watch_update",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"rule_id": rule_id, "fields": sorted(list(fields))},
+    )
+
+    return CabinetWatchRulesResponse(items=store.list_watch_rules(auth_user.telegram_user_id))
+
+
+@router.get("/history", response_model=CabinetHistoryResponse)
+async def cabinet_history(
+    request: Request,
+    limit: int = 40,
+    event_type: str | None = None,
+    search: str | None = None,
+) -> CabinetHistoryResponse:
+    auth_user = _require_user(request)
+    return CabinetHistoryResponse(
+        items=store.list_bot_events_filtered(
+            auth_user.telegram_user_id,
+            limit=limit,
+            event_type=event_type,
+            query_text=search,
+        )
+    )

@@ -161,13 +161,59 @@
                     <span data-i18n="cabinet_watch_query">Запрос</span>
                     <input id="cabinet-watch-query" placeholder="ai fintech crypto" />
                   </label>
+                  <div class="inline-actions">
+                    <label>
+                      <span data-i18n="cabinet_watch_tlds">TLDs CSV</span>
+                      <input id="cabinet-watch-tlds" placeholder=".com,.io,.ai,.ru" />
+                    </label>
+                    <label>
+                      <span data-i18n="cabinet_watch_min_score">Min score</span>
+                      <input id="cabinet-watch-min-score" type="number" min="0" max="100" step="0.1" placeholder="70" />
+                    </label>
+                  </div>
+                  <label>
+                    <span data-i18n="cabinet_watch_max_price">Max price USD</span>
+                    <input id="cabinet-watch-max-price" type="number" min="0" step="0.01" placeholder="20" />
+                  </label>
                   <button type="submit" class="btn-primary" data-i18n="cabinet_watch_add">Добавить правило</button>
                 </form>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_watch_search">Поиск rules</span>
+                    <input id="cabinet-watch-search" placeholder="fintech" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_watch_status_filter">Статус</span>
+                    <select id="cabinet-watch-status-filter">
+                      <option value="">all</option>
+                      <option value="active">active</option>
+                      <option value="paused">paused</option>
+                      <option value="deleted">deleted</option>
+                    </select>
+                  </label>
+                </div>
                 <div id="cabinet-watch-list" class="list-box"></div>
               </article>
 
               <article class="cabinet-card">
                 <h3 data-i18n="cabinet_history">История</h3>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_history_type">Тип события</span>
+                    <input id="cabinet-history-type" placeholder="cabinet_watch_add" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_history_search">Поиск по payload</span>
+                    <input id="cabinet-history-search" placeholder="rule_id" />
+                  </label>
+                </div>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_history_limit">Лимит</span>
+                    <input id="cabinet-history-limit" type="number" min="1" max="200" value="40" />
+                  </label>
+                  <button type="button" class="btn-ghost" id="cabinet-history-apply-btn" data-i18n="cabinet_history_apply">Применить</button>
+                </div>
                 <div id="cabinet-history" class="list-box"></div>
               </article>
             </div>

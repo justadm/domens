@@ -41,12 +41,22 @@ const I18N = {
     cabinet_watch: "Watch-правила",
     cabinet_watch_query: "Запрос",
     cabinet_watch_add: "Добавить правило",
+    cabinet_watch_tlds: "TLDs CSV",
+    cabinet_watch_min_score: "Min score",
+    cabinet_watch_max_price: "Max price USD",
+    cabinet_watch_search: "Поиск rules",
+    cabinet_watch_status_filter: "Статус",
     cabinet_history: "История",
+    cabinet_history_type: "Тип события",
+    cabinet_history_search: "Поиск по payload",
+    cabinet_history_limit: "Лимит",
+    cabinet_history_apply: "Применить",
     cabinet_login_required: "Войдите через Telegram, чтобы открыть кабинет",
     cabinet_empty: "Пусто",
     cabinet_pause: "Пауза",
     cabinet_resume: "Возобновить",
     cabinet_delete: "Удалить",
+    cabinet_save: "Сохранить",
   },
   en: {
     lang: "Language",
@@ -90,12 +100,22 @@ const I18N = {
     cabinet_watch: "Watch Rules",
     cabinet_watch_query: "Query",
     cabinet_watch_add: "Add Rule",
+    cabinet_watch_tlds: "TLDs CSV",
+    cabinet_watch_min_score: "Min score",
+    cabinet_watch_max_price: "Max price USD",
+    cabinet_watch_search: "Search rules",
+    cabinet_watch_status_filter: "Status",
     cabinet_history: "History",
+    cabinet_history_type: "Event Type",
+    cabinet_history_search: "Search payload",
+    cabinet_history_limit: "Limit",
+    cabinet_history_apply: "Apply",
     cabinet_login_required: "Sign in with Telegram to open cabinet",
     cabinet_empty: "Empty",
     cabinet_pause: "Pause",
     cabinet_resume: "Resume",
     cabinet_delete: "Delete",
+    cabinet_save: "Save",
   },
 };
 
@@ -104,6 +124,7 @@ let currentTheme = localStorage.getItem("domens_theme") || "dark";
 let lastResults = [];
 let sortState = { key: "domain", dir: "asc" };
 let authState = { authenticated: false, user: null };
+let cabinetState = { profile: null, subscriptions: [], watchRules: [], history: [] };
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -130,6 +151,13 @@ function linesToDomains(value) {
   return value
     .split("\n")
     .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function csvToList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
     .filter(Boolean);
 }
 
@@ -398,12 +426,19 @@ function renderCabinetWatchRules(items) {
         </div>
         <div class="feed-row">
           <span>${escapeHtml(item.id)}</span>
-          <span>score >= ${item.min_score ?? "-"}</span>
+          <span>score >= ${item.min_score ?? "-"} | max $${item.max_price_usd ?? "-"}</span>
+        </div>
+        <div class="rule-edit-grid">
+          <input class="rule-edit-input" data-rule-field="query" data-rule-id="${escapeHtml(item.id)}" value="${escapeHtml(item.query || "")}" />
+          <input class="rule-edit-input" data-rule-field="tlds" data-rule-id="${escapeHtml(item.id)}" value="${escapeHtml((item.tlds || []).join(","))}" placeholder=".com,.io" />
+          <input class="rule-edit-input" data-rule-field="min_score" data-rule-id="${escapeHtml(item.id)}" value="${item.min_score ?? ""}" type="number" min="0" max="100" step="0.1" placeholder="70" />
+          <input class="rule-edit-input" data-rule-field="max_price_usd" data-rule-id="${escapeHtml(item.id)}" value="${item.max_price_usd ?? ""}" type="number" min="0" step="0.01" placeholder="20" />
         </div>
         <div class="list-row-actions">
           <button type="button" class="mini-btn js-watch-action" data-action="paused" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_pause}</button>
           <button type="button" class="mini-btn js-watch-action" data-action="active" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_resume}</button>
           <button type="button" class="mini-btn js-watch-action" data-action="deleted" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_delete}</button>
+          <button type="button" class="mini-btn js-watch-save" data-rule-id="${escapeHtml(item.id)}">${dict.cabinet_save}</button>
         </div>
       </article>`,
     )
@@ -440,16 +475,39 @@ async function refreshCabinet() {
   }
 
   try {
+    const watchSearch = document.getElementById("cabinet-watch-search").value.trim();
+    const watchStatus = document.getElementById("cabinet-watch-status-filter").value.trim();
+    const historyType = document.getElementById("cabinet-history-type").value.trim();
+    const historySearch = document.getElementById("cabinet-history-search").value.trim();
+    const historyLimitRaw = Number(document.getElementById("cabinet-history-limit").value || 40);
+    const historyLimit = Number.isFinite(historyLimitRaw) ? Math.max(1, Math.min(200, historyLimitRaw)) : 40;
+
+    const watchParams = new URLSearchParams();
+    if (watchStatus) watchParams.set("status", watchStatus);
+    if (watchSearch) watchParams.set("search", watchSearch);
+    const watchUrl = watchParams.size ? `/v1/cabinet/watch-rules?${watchParams.toString()}` : "/v1/cabinet/watch-rules";
+
+    const historyParams = new URLSearchParams({ limit: String(historyLimit) });
+    if (historyType) historyParams.set("event_type", historyType);
+    if (historySearch) historyParams.set("search", historySearch);
+    const historyUrl = `/v1/cabinet/history?${historyParams.toString()}`;
+
     const [profile, subs, watchRules, history] = await Promise.all([
       api("/v1/cabinet/profile"),
       api("/v1/cabinet/subscriptions"),
-      api("/v1/cabinet/watch-rules"),
-      api("/v1/cabinet/history?limit=40"),
+      api(watchUrl),
+      api(historyUrl),
     ]);
+    cabinetState = {
+      profile,
+      subscriptions: subs.items || [],
+      watchRules: watchRules.items || [],
+      history: history.items || [],
+    };
     renderCabinetProfile(profile);
-    renderCabinetSubscriptions(subs.items || []);
-    renderCabinetWatchRules(watchRules.items || []);
-    renderCabinetHistory(history.items || []);
+    renderCabinetSubscriptions(cabinetState.subscriptions);
+    renderCabinetWatchRules(cabinetState.watchRules);
+    renderCabinetHistory(cabinetState.history);
   } catch (err) {
     setCabinetMessage(String(err));
   }
@@ -674,13 +732,21 @@ document.getElementById("cabinet-alerts-off-btn").addEventListener("click", asyn
 document.getElementById("cabinet-watch-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
+    const minScoreRaw = document.getElementById("cabinet-watch-min-score").value.trim();
+    const maxPriceRaw = document.getElementById("cabinet-watch-max-price").value.trim();
     await api("/v1/cabinet/watch-rules", {
       method: "POST",
       body: JSON.stringify({
         query: document.getElementById("cabinet-watch-query").value.trim(),
+        tlds: csvToList(document.getElementById("cabinet-watch-tlds").value),
+        min_score: minScoreRaw ? Number(minScoreRaw) : null,
+        max_price_usd: maxPriceRaw ? Number(maxPriceRaw) : null,
       }),
     });
     document.getElementById("cabinet-watch-query").value = "";
+    document.getElementById("cabinet-watch-tlds").value = "";
+    document.getElementById("cabinet-watch-min-score").value = "";
+    document.getElementById("cabinet-watch-max-price").value = "";
     await refreshCabinet();
   } catch (err) {
     setCabinetMessage(String(err));
@@ -705,6 +771,53 @@ document.getElementById("cabinet-watch-list").addEventListener("click", async (e
   } catch (err) {
     setCabinetMessage(String(err));
   }
+});
+
+document.getElementById("cabinet-watch-list").addEventListener("click", async (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (!target.classList.contains("js-watch-save")) return;
+
+  const ruleId = target.dataset.ruleId;
+  if (!ruleId) return;
+
+  const queryEl = document.querySelector(`input[data-rule-field="query"][data-rule-id="${ruleId}"]`);
+  const tldsEl = document.querySelector(`input[data-rule-field="tlds"][data-rule-id="${ruleId}"]`);
+  const minScoreEl = document.querySelector(`input[data-rule-field="min_score"][data-rule-id="${ruleId}"]`);
+  const maxPriceEl = document.querySelector(`input[data-rule-field="max_price_usd"][data-rule-id="${ruleId}"]`);
+  if (!(queryEl instanceof HTMLInputElement)) return;
+  if (!(tldsEl instanceof HTMLInputElement)) return;
+  if (!(minScoreEl instanceof HTMLInputElement)) return;
+  if (!(maxPriceEl instanceof HTMLInputElement)) return;
+
+  const payload = {
+    query: queryEl.value.trim(),
+    tlds: csvToList(tldsEl.value),
+    min_score: minScoreEl.value.trim() ? Number(minScoreEl.value.trim()) : null,
+    max_price_usd: maxPriceEl.value.trim() ? Number(maxPriceEl.value.trim()) : null,
+  };
+
+  try {
+    await api(`/v1/cabinet/watch-rules/${ruleId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
+document.getElementById("cabinet-watch-search").addEventListener("input", () => {
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-watch-status-filter").addEventListener("change", () => {
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-history-apply-btn").addEventListener("click", () => {
+  refreshCabinet();
 });
 
 applyTheme(currentTheme);
