@@ -168,6 +168,12 @@ async def _handle_profile(chat_id: str, user_id: str) -> dict:
 
     rules_count = store.get_watch_rules_count(user_id)
     alerts_enabled = store.get_telegram_alerts_enabled(user_id)
+    usage_24h = store.get_user_alert_usage_24h(
+        user_id,
+        per_target_daily_limit=settings.monitor_alert_per_target_daily_limit,
+    )
+    daily_sent = int(usage_24h.get("daily_sent") or 0)
+    daily_remaining = int(usage_24h.get("daily_remaining_total") or 0)
     profile_text = (
         f"Профиль:\n"
         f"user_id: {user.telegram_user_id}\n"
@@ -175,6 +181,8 @@ async def _handle_profile(chat_id: str, user_id: str) -> dict:
         f"chat_id: {user.telegram_chat_id or '-'}\n"
         f"disclaimer: {'accepted' if user.disclaimer_accepted_at else 'not accepted'}\n"
         f"alerts: {'on' if alerts_enabled else 'off'}\n"
+        f"alerts_24h_sent: {daily_sent}\n"
+        f"alerts_24h_remaining: {daily_remaining}\n"
         f"active watch rules: {rules_count}"
     )
     await send_telegram_text(chat_id, profile_text)

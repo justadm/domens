@@ -383,6 +383,8 @@ function renderCabinetProfile(data) {
     ["disclaimer_accepted_at", formatDate(data.disclaimer_accepted_at)],
     ["alerts_enabled", data.alerts_enabled ? "true" : "false"],
     ["max_alerts_enabled", data.max_alerts_enabled ? "true" : "false"],
+    ["alerts_24h_sent", String((data.alert_usage_24h || {}).daily_sent ?? 0)],
+    ["alerts_24h_remaining_total", String((data.alert_usage_24h || {}).daily_remaining_total ?? 0)],
     ["watch_rules_active", String(data.watch_rules_active || 0)],
   ];
   root.innerHTML = rows
@@ -391,6 +393,18 @@ function renderCabinetProfile(data) {
         `<div class="kv-row"><span class="kv-key">${escapeHtml(key)}</span><span class="kv-value">${escapeHtml(value)}</span></div>`,
     )
     .join("");
+  const channels = ((data.alert_usage_24h || {}).channels || []).map(
+    (item) =>
+      `${item.channel_type}:${item.channel_target} sent=${item.daily_sent} remain=${item.daily_remaining}/${item.daily_limit}`,
+  );
+  if (channels.length) {
+    root.innerHTML += channels
+      .map(
+        (line) =>
+          `<div class="kv-row"><span class="kv-key">alerts_24h_channel</span><span class="kv-value">${escapeHtml(line)}</span></div>`,
+      )
+      .join("");
+  }
   const chatInput = document.getElementById("cabinet-chat-id");
   if (chatInput && data.chat_id) {
     chatInput.value = data.chat_id;

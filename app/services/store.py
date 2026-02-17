@@ -498,6 +498,51 @@ class PostgresStore:
             rows = session.execute(query).all()
             return len(rows)
 
+    def get_user_alert_usage_24h(self, telegram_user_id: str, per_target_daily_limit: int) -> dict:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return {
+                    "daily_sent": 0,
+                    "daily_remaining_total": 0,
+                    "channels": [],
+                }
+
+            subs = session.execute(
+                select(UserSubscriptionModel)
+                .where(UserSubscriptionModel.user_id == user.id)
+                .where(UserSubscriptionModel.status == "active")
+                .where(UserSubscriptionModel.channel_type.in_(["telegram", "max"]))
+            ).scalars()
+            subs_list = list(subs)
+
+            channels: list[dict] = []
+            daily_sent_total = 0
+            for sub in subs_list:
+                sent = self.count_recent_alerts_for_destination(
+                    destination=sub.channel_target,
+                    within_hours=24,
+                )
+                remaining = max(0, int(per_target_daily_limit) - sent)
+                daily_sent_total += sent
+                channels.append(
+                    {
+                        "channel_type": sub.channel_type,
+                        "channel_target": sub.channel_target,
+                        "daily_sent": sent,
+                        "daily_remaining": remaining,
+                        "daily_limit": int(per_target_daily_limit),
+                    }
+                )
+
+            return {
+                "daily_sent": daily_sent_total,
+                "daily_remaining_total": sum(item["daily_remaining"] for item in channels),
+                "channels": channels,
+            }
+
     def list_recent_alerts(self, limit: int = 20) -> list[dict]:
         with self._session() as session:
             rows = session.execute(

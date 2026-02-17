@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
 from app.state import store
 
@@ -49,6 +50,7 @@ class CabinetProfileResponse(BaseModel):
     alerts_enabled: bool
     max_alerts_enabled: bool
     watch_rules_active: int
+    alert_usage_24h: dict
 
 
 class CabinetSubscriptionsResponse(BaseModel):
@@ -77,6 +79,11 @@ async def cabinet_profile(request: Request) -> CabinetProfileResponse:
     if not user:
         raise HTTPException(status_code=404, detail="profile not found")
 
+    usage_24h = store.get_user_alert_usage_24h(
+        user.telegram_user_id,
+        per_target_daily_limit=settings.monitor_alert_per_target_daily_limit,
+    )
+
     return CabinetProfileResponse(
         telegram_user_id=user.telegram_user_id,
         username=user.username,
@@ -88,6 +95,7 @@ async def cabinet_profile(request: Request) -> CabinetProfileResponse:
         alerts_enabled=store.get_telegram_alerts_enabled(user.telegram_user_id),
         max_alerts_enabled=store.get_channel_alerts_enabled(user.telegram_user_id, "max"),
         watch_rules_active=store.get_watch_rules_count(user.telegram_user_id),
+        alert_usage_24h=usage_24h,
     )
 
 
