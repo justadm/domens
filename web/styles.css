@@ -208,6 +208,15 @@ select {
   font-weight: 600;
   text-align: right;
 }
+.limit-ok {
+  color: #6ee7b7;
+}
+.limit-warn {
+  color: #fbbf24;
+}
+.limit-high {
+  color: #f87171;
+}
 .inline-actions {
   display: grid;
   gap: 8px;

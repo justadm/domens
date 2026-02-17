@@ -137,6 +137,7 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
         "Доступные команды:\n"
         "/start - начало работы и условия\n"
         "/help - список команд\n"
+        "/limits - лимиты алертов за 24ч\n"
         "/profile - профиль и статус\n"
         "/watch add <query> - добавить правило\n"
         "/watch list - список правил\n"
@@ -149,6 +150,30 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
     await send_telegram_text(chat_id, help_text)
     store.log_bot_event("command_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "help_sent"}
+
+
+async def _handle_limits(chat_id: str, user_id: str) -> dict:
+    usage_24h = store.get_user_alert_usage_24h(
+        user_id,
+        per_target_daily_limit=settings.monitor_alert_per_target_daily_limit,
+    )
+    lines = [
+        "Лимиты за 24ч:",
+        f"- отправлено: {int(usage_24h.get('daily_sent') or 0)}",
+        f"- осталось: {int(usage_24h.get('daily_remaining_total') or 0)}",
+    ]
+    channels = usage_24h.get("channels") or []
+    if channels:
+        lines.append("Каналы:")
+        for item in channels:
+            lines.append(
+                f"- {item.get('channel_type')}:{item.get('channel_target')} -> "
+                f"{item.get('daily_sent')}/{item.get('daily_limit')}"
+            )
+
+    await send_telegram_text(chat_id, "\n".join(lines))
+    store.log_bot_event("command_limits", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "limits_sent"}
 
 
 def _is_ready(user_id: str) -> tuple[bool, str | None]:
@@ -476,6 +501,8 @@ async def process_telegram_update(payload: dict) -> dict:
         return await _handle_start(chat_id, user_id, locale, username, first_name)
     if text.startswith("/help"):
         return await _handle_help(chat_id, user_id)
+    if text.startswith("/limits"):
+        return await _handle_limits(chat_id, user_id)
 
     ready, reason = _is_ready(user_id)
     if not ready:

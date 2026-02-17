@@ -89,9 +89,16 @@ class DomainMonitoringService:
         interesting_statuses = {"available", "pending_delete", "redemption", "client_hold"}
         alerts_sent = 0
         per_target_sent: dict[tuple[str, str], int] = {}
+        per_target_daily_sent: dict[tuple[str, str], int] = {}
         per_target_run_limit = max(1, settings.monitor_alert_per_target_run_limit)
         per_target_daily_limit = max(per_target_run_limit, settings.monitor_alert_per_target_daily_limit)
         per_target_lock = asyncio.Lock()
+
+        def dynamic_run_limit(daily_sent: int) -> int:
+            threshold = int(per_target_daily_limit * 0.8)
+            if daily_sent >= threshold:
+                return 1
+            return per_target_run_limit
 
         sem = asyncio.Semaphore(12)
 
@@ -122,19 +129,20 @@ class DomainMonitoringService:
                             destination,
                         )
                         async with per_target_lock:
-                            if per_target_sent.get(destination_key, 0) >= per_target_run_limit:
-                                destination = ""
-                            elif (
-                                self.store.count_recent_alerts_for_destination(
+                            if destination_key not in per_target_daily_sent:
+                                per_target_daily_sent[destination_key] = self.store.count_recent_alerts_for_destination(
                                     destination,
                                     within_hours=24,
                                     alert_type_prefix="monitor_match",
                                 )
-                                >= per_target_daily_limit
-                            ):
+                            effective_limit = dynamic_run_limit(per_target_daily_sent[destination_key])
+                            if per_target_sent.get(destination_key, 0) >= effective_limit:
+                                destination = ""
+                            elif per_target_daily_sent[destination_key] >= per_target_daily_limit:
                                 destination = ""
                             else:
                                 per_target_sent[destination_key] = per_target_sent.get(destination_key, 0) + 1
+                                per_target_daily_sent[destination_key] += 1
                         if not destination:
                             return
                         self.store.create_alert(
@@ -169,16 +177,16 @@ class DomainMonitoringService:
                     if key in sent_keys:
                         continue
                     async with per_target_lock:
-                        if per_target_sent.get(key, 0) >= per_target_run_limit:
-                            continue
-                        if (
-                            self.store.count_recent_alerts_for_destination(
+                        if key not in per_target_daily_sent:
+                            per_target_daily_sent[key] = self.store.count_recent_alerts_for_destination(
                                 channel_target,
                                 within_hours=24,
                                 alert_type_prefix="watch_rule_match",
                             )
-                            >= per_target_daily_limit
-                        ):
+                        effective_limit = dynamic_run_limit(per_target_daily_sent[key])
+                        if per_target_sent.get(key, 0) >= effective_limit:
+                            continue
+                        if per_target_daily_sent[key] >= per_target_daily_limit:
                             continue
                         if self.store.has_recent_alert_for_destination(
                             fqdn,
@@ -187,6 +195,7 @@ class DomainMonitoringService:
                         ):
                             continue
                         per_target_sent[key] = per_target_sent.get(key, 0) + 1
+                        per_target_daily_sent[key] += 1
 
                     token = build_confirmation_token()
                     self.store.create_alert(

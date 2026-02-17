@@ -373,6 +373,13 @@ function setCabinetMessage(message) {
 function renderCabinetProfile(data) {
   const root = document.getElementById("cabinet-profile");
   if (!root) return;
+  const usage = data.alert_usage_24h || {};
+  const remainingTotal = Number(usage.daily_remaining_total ?? 0);
+  const sentTotal = Number(usage.daily_sent ?? 0);
+  const channelsUsage = usage.channels || [];
+  const maxLimit = channelsUsage.length ? Math.max(...channelsUsage.map((x) => Number(x.daily_limit || 0))) : 0;
+  const usedPct = maxLimit > 0 ? Math.round((sentTotal / maxLimit) * 100) : 0;
+  const levelClass = remainingTotal <= 0 ? "limit-high" : usedPct >= 80 ? "limit-warn" : "limit-ok";
   const rows = [
     ["telegram_user_id", data.telegram_user_id || "-"],
     ["username", data.username ? `@${data.username}` : "-"],
@@ -383,8 +390,8 @@ function renderCabinetProfile(data) {
     ["disclaimer_accepted_at", formatDate(data.disclaimer_accepted_at)],
     ["alerts_enabled", data.alerts_enabled ? "true" : "false"],
     ["max_alerts_enabled", data.max_alerts_enabled ? "true" : "false"],
-    ["alerts_24h_sent", String((data.alert_usage_24h || {}).daily_sent ?? 0)],
-    ["alerts_24h_remaining_total", String((data.alert_usage_24h || {}).daily_remaining_total ?? 0)],
+    ["alerts_24h_sent", String(sentTotal)],
+    ["alerts_24h_remaining_total", String(remainingTotal)],
     ["watch_rules_active", String(data.watch_rules_active || 0)],
   ];
   root.innerHTML = rows
@@ -401,10 +408,11 @@ function renderCabinetProfile(data) {
     root.innerHTML += channels
       .map(
         (line) =>
-          `<div class="kv-row"><span class="kv-key">alerts_24h_channel</span><span class="kv-value">${escapeHtml(line)}</span></div>`,
+          `<div class="kv-row"><span class="kv-key">alerts_24h_channel</span><span class="kv-value ${levelClass}">${escapeHtml(line)}</span></div>`,
       )
       .join("");
   }
+  root.innerHTML += `<div class="kv-row"><span class="kv-key">alerts_24h_level</span><span class="kv-value ${levelClass}">${escapeHtml(levelClass.replace('limit-', ''))}</span></div>`;
   const chatInput = document.getElementById("cabinet-chat-id");
   if (chatInput && data.chat_id) {
     chatInput.value = data.chat_id;
