@@ -40,6 +40,19 @@ docker compose up --build -d
 - Swagger: http://127.0.0.1:8080/docs
 - Web UI: http://127.0.0.1:8080/
 
+## Прод: VPS + поддомен + автодеплой из GitHub
+- Прод compose: `deploy/docker-compose.prod.yml`
+- Reverse proxy/HTTPS: `deploy/Caddyfile`
+- Deploy script на сервере: `scripts/deploy_prod.sh`
+- GitHub Actions workflow: `.github/workflows/deploy.yml`
+- Пошаговая инструкция: `docs/deploy_github_actions.md`
+
+Кратко:
+1. Подними временный поддомен 3-го уровня (например `domens.dev.example.com`) на IP VPS.
+2. На сервере разверни репозиторий в `/opt/domens` и заполни `/opt/domens/.env`.
+3. Добавь GitHub secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_PRIVATE_KEY`, ...).
+4. Любой push в `main` автоматически выполняет деплой по SSH.
+
 ## Make команды
 ```bash
 cd /Users/just/projects/domens
