@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     monitor_seed_words: str = "agent,cloud,data,stack,flow,grid,lab,core"
     monitor_alert_min_score: float = 70.0
     monitor_alert_cooldown_minutes: int = 180
+    monitor_alert_per_target_run_limit: int = 5
+    monitor_alert_per_target_daily_limit: int = 25
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

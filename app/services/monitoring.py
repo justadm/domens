@@ -89,7 +89,8 @@ class DomainMonitoringService:
         interesting_statuses = {"available", "pending_delete", "redemption", "client_hold"}
         alerts_sent = 0
         per_target_sent: dict[tuple[str, str], int] = {}
-        per_target_run_limit = 5
+        per_target_run_limit = max(1, settings.monitor_alert_per_target_run_limit)
+        per_target_daily_limit = max(per_target_run_limit, settings.monitor_alert_per_target_daily_limit)
         per_target_lock = asyncio.Lock()
 
         sem = asyncio.Semaphore(12)
@@ -116,6 +117,26 @@ class DomainMonitoringService:
                     if not self.store.has_recent_alert(fqdn, within_minutes=settings.monitor_alert_cooldown_minutes):
                         token = build_confirmation_token()
                         destination = settings.telegram_chat_id or settings.max_chat_id
+                        destination_key = (
+                            "telegram" if settings.telegram_chat_id else "max",
+                            destination,
+                        )
+                        async with per_target_lock:
+                            if per_target_sent.get(destination_key, 0) >= per_target_run_limit:
+                                destination = ""
+                            elif (
+                                self.store.count_recent_alerts_for_destination(
+                                    destination,
+                                    within_hours=24,
+                                    alert_type_prefix="monitor_match",
+                                )
+                                >= per_target_daily_limit
+                            ):
+                                destination = ""
+                            else:
+                                per_target_sent[destination_key] = per_target_sent.get(destination_key, 0) + 1
+                        if not destination:
+                            return
                         self.store.create_alert(
                             domain=fqdn,
                             telegram_chat_id=destination,
@@ -149,6 +170,15 @@ class DomainMonitoringService:
                         continue
                     async with per_target_lock:
                         if per_target_sent.get(key, 0) >= per_target_run_limit:
+                            continue
+                        if (
+                            self.store.count_recent_alerts_for_destination(
+                                channel_target,
+                                within_hours=24,
+                                alert_type_prefix="watch_rule_match",
+                            )
+                            >= per_target_daily_limit
+                        ):
                             continue
                         if self.store.has_recent_alert_for_destination(
                             fqdn,

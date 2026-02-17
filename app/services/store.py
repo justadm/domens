@@ -480,6 +480,24 @@ class PostgresStore:
             ).scalar_one_or_none()
             return row is not None
 
+    def count_recent_alerts_for_destination(
+        self,
+        destination: str,
+        within_hours: int = 24,
+        alert_type_prefix: str | None = None,
+    ) -> int:
+        threshold = datetime.now(timezone.utc) - timedelta(hours=max(1, within_hours))
+        with self._session() as session:
+            query = (
+                select(AlertModel.id)
+                .where(AlertModel.telegram_chat_id == str(destination))
+                .where(AlertModel.created_at >= threshold)
+            )
+            if alert_type_prefix:
+                query = query.where(AlertModel.alert_type.like(f"{alert_type_prefix}%"))
+            rows = session.execute(query).all()
+            return len(rows)
+
     def list_recent_alerts(self, limit: int = 20) -> list[dict]:
         with self._session() as session:
             rows = session.execute(

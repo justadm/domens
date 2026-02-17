@@ -278,13 +278,36 @@ def _normalize_query(raw: str) -> str:
     return value[:24]
 
 
+def _query_terms(raw: str) -> list[str]:
+    return [item for item in re.split(r"[^a-z0-9]+", raw.lower()) if len(item) >= 2][:4]
+
+
+def _domains_now_rank(item: dict, query_terms: list[str]) -> tuple:
+    status_weight = {"available": 100, "pending_delete": 90, "redemption": 75, "client_hold": 70, "registered": 20}
+    domain = str(item.get("domain") or "").lower()
+    name = domain.split(".", 1)[0]
+    base = float(item.get("score") or 0)
+    status_bonus = status_weight.get(str(item.get("status") or "registered"), 10)
+    term_bonus = 0
+    if query_terms:
+        hits = sum(1 for term in query_terms if term in name)
+        term_bonus = hits * 8
+        if name.startswith(query_terms[0]):
+            term_bonus += 5
+    length_penalty = max(0, len(name) - 11) * 1.5
+    final_score = base + status_bonus + term_bonus - length_penalty
+    return (-final_score, name)
+
+
 async def _handle_domains_now(chat_id: str, user_id: str, text: str) -> dict:
     parts = text.split(maxsplit=2)
     if len(parts) < 3 or parts[1].lower() != "now":
         await send_telegram_text(chat_id, "Формат: /domains now <query>")
         return {"ok": True, "action": "domains_now_bad_format"}
 
-    query = _normalize_query(parts[2])
+    raw_query = parts[2]
+    query_terms = _query_terms(raw_query)
+    query = _normalize_query(raw_query)
     if len(query) < 2:
         await send_telegram_text(chat_id, "Слишком короткий запрос. Пример: /domains now fintech")
         return {"ok": True, "action": "domains_now_short_query"}
@@ -314,8 +337,7 @@ async def _handle_domains_now(chat_id: str, user_id: str, text: str) -> dict:
 
     rows = await asyncio.gather(*(check_one(name) for name in candidates))
 
-    priority = {"available": 0, "pending_delete": 1, "redemption": 2, "client_hold": 3, "registered": 9}
-    rows.sort(key=lambda item: (priority.get(item["status"], 8), -float(item["score"])))
+    rows.sort(key=lambda item: _domains_now_rank(item, query_terms))
 
     top = rows[:8]
     lines = [
