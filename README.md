@@ -12,6 +12,7 @@ MVP-сервис для поиска/отслеживания востребов
 - `docs/api_contracts.md` — API-контракты между модулями и внешними клиентами
 - `docs/domain_base_strategy.md` — как собирать релевантную базу доменов
 - `docs/telegram_bot_scope.md` — продуктовый scope Telegram-бота (команды, дисклеймер, подписки, этапы)
+- `docs/telegram_local_and_prod_runbook.md` — как переключить Telegram с локального polling на прод webhook (IP/домен/HTTPS)
 - `app/` — каркас backend (FastAPI)
 
 ## Быстрый старт

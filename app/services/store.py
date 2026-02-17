@@ -466,6 +466,20 @@ class PostgresStore:
             ).scalar_one_or_none()
             return row is not None
 
+    def has_recent_alert_for_destination(self, fqdn: str, destination: str, within_minutes: int = 60) -> bool:
+        threshold = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
+        with self._session() as session:
+            row = session.execute(
+                select(AlertModel.created_at)
+                .join(DomainModel, DomainModel.id == AlertModel.domain_id)
+                .where(DomainModel.fqdn == fqdn.strip().lower())
+                .where(AlertModel.telegram_chat_id == str(destination))
+                .where(AlertModel.created_at >= threshold)
+                .order_by(desc(AlertModel.created_at))
+                .limit(1)
+            ).scalar_one_or_none()
+            return row is not None
+
     def list_recent_alerts(self, limit: int = 20) -> list[dict]:
         with self._session() as session:
             rows = session.execute(
@@ -673,6 +687,36 @@ class PostgresStore:
                 }
                 for r in rows
             ]
+
+    def list_active_watch_targets(self) -> list[dict]:
+        with self._session() as session:
+            rows = session.execute(
+                select(UserWatchRuleModel, TelegramUserModel, UserSubscriptionModel)
+                .join(TelegramUserModel, TelegramUserModel.id == UserWatchRuleModel.user_id)
+                .join(UserSubscriptionModel, UserSubscriptionModel.user_id == TelegramUserModel.id)
+                .where(UserWatchRuleModel.status == "active")
+                .where(TelegramUserModel.is_active.is_(True))
+                .where(TelegramUserModel.disclaimer_accepted_at.is_not(None))
+                .where(UserSubscriptionModel.status == "active")
+                .where(UserSubscriptionModel.channel_type.in_(["telegram", "max"]))
+                .order_by(desc(UserWatchRuleModel.created_at))
+            ).all()
+
+            result: list[dict] = []
+            for rule, user, sub in rows:
+                result.append(
+                    {
+                        "rule_id": str(rule.id),
+                        "telegram_user_id": user.telegram_user_id,
+                        "query": rule.watch_query,
+                        "tlds": (rule.tlds or {}).get("items", []),
+                        "min_score": float(rule.min_score) if rule.min_score is not None else None,
+                        "max_price_usd": float(rule.max_price_usd) if rule.max_price_usd is not None else None,
+                        "channel_type": sub.channel_type,
+                        "channel_target": sub.channel_target,
+                    }
+                )
+            return result
 
     def update_watch_rule(
         self,

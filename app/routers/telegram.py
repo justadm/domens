@@ -37,6 +37,35 @@ def _parse_csv(raw: str) -> list[str]:
     return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
 
+def _short_rule(rule_id: str) -> str:
+    return rule_id.split("-", 1)[0]
+
+
+def _watch_rules_text(rules: list[dict]) -> str:
+    lines: list[str] = ["Ваши watch-правила:"]
+    for item in rules[:20]:
+        lines.append(f"- [{item['status']}] {item['query']} (id: {_short_rule(item['id'])})")
+    return "\n".join(lines)
+
+
+def _watch_rules_keyboard(rules: list[dict]) -> dict | None:
+    keyboard: list[list[dict]] = []
+    for item in rules[:10]:
+        rid = str(item["id"])
+        status = str(item.get("status") or "active")
+        action = "pause" if status == "active" else "resume"
+        action_label = "Пауза" if action == "pause" else "Резюме"
+        keyboard.append(
+            [
+                {"text": action_label, "callback_data": f"watch:{action}:{rid}"},
+                {"text": "Удалить", "callback_data": f"watch:delete:{rid}"},
+            ]
+        )
+    if not keyboard:
+        return None
+    return {"inline_keyboard": keyboard}
+
+
 def _extract_message(payload: dict) -> tuple[str, str, str, str, str | None, str | None] | None:
     message = payload.get("message") if isinstance(payload, dict) else None
     if not isinstance(message, dict):
@@ -172,7 +201,11 @@ async def _handle_watch(chat_id: str, user_id: str, text: str) -> dict:
             await send_telegram_text(chat_id, "Сначала выполните /start")
             return {"ok": True, "action": "watch_add_no_user"}
 
-        await send_telegram_text(chat_id, f"Правило добавлено: {rule_id} ({query})")
+        await send_telegram_text(
+            chat_id,
+            f"Правило добавлено: {_short_rule(rule_id)} ({query})\n"
+            f"Управление: /watch list или /watch pause {rule_id}",
+        )
         store.log_bot_event("watch_add", telegram_user_id=user_id, telegram_chat_id=chat_id, payload={"rule_id": rule_id})
         return {"ok": True, "action": "watch_added", "rule_id": rule_id}
 
@@ -182,8 +215,11 @@ async def _handle_watch(chat_id: str, user_id: str, text: str) -> dict:
             await send_telegram_text(chat_id, "Правил нет. Добавьте: /watch add <query>")
             return {"ok": True, "action": "watch_list_empty"}
 
-        lines = [f"{r['id']} | {r['status']} | {r['query']}" for r in rules[:20]]
-        await send_telegram_text(chat_id, "Ваши правила:\n" + "\n".join(lines))
+        await send_telegram_message(
+            chat_id,
+            _watch_rules_text(rules),
+            reply_markup=_watch_rules_keyboard(rules),
+        )
         return {"ok": True, "action": "watch_list_sent", "count": len(rules)}
 
     if action in {"pause", "resume", "delete"}:
@@ -309,6 +345,37 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             await send_telegram_text(chat_id, "Условия приняты. Теперь доступны команды: /help, /profile, /watch ...")
         return {"ok": True, "action": "disclaimer_accepted"}
 
+    if callback_data.startswith("watch:"):
+        parts = callback_data.split(":", 2)
+        if len(parts) != 3:
+            raise HTTPException(status_code=400, detail="invalid watch callback_data")
+        _, action, rule_id = parts
+        if action not in {"pause", "resume", "delete"}:
+            raise HTTPException(status_code=400, detail="invalid watch callback action")
+        target_status = "paused" if action == "pause" else "active"
+        if action == "delete":
+            target_status = "deleted"
+        ok = store.set_watch_rule_status(user_id, rule_id, target_status)
+        if not ok:
+            if chat_id:
+                await send_telegram_text(chat_id, "Правило не найдено")
+            return {"ok": True, "action": "watch_callback_not_found"}
+
+        store.log_bot_event(
+            f"watch_{action}_callback",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"rule_id": rule_id},
+        )
+        rules = store.list_watch_rules(user_id)
+        if chat_id:
+            await send_telegram_message(
+                chat_id,
+                f"Готово: {action} {_short_rule(rule_id)}",
+                reply_markup=_watch_rules_keyboard(rules),
+            )
+        return {"ok": True, "action": f"watch_{action}_callback_done"}
+
     parts = callback_data.split(":", 1)
     if len(parts) != 2:
         raise HTTPException(status_code=400, detail="invalid callback_data")
@@ -357,6 +424,10 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
 
 @router.post("/webhook")
 async def telegram_webhook(payload: dict) -> dict:
+    return await process_telegram_update(payload)
+
+
+async def process_telegram_update(payload: dict) -> dict:
     callback = _extract_callback(payload)
     if callback:
         callback_data, from_user_id, chat_id, callback_query_id = callback

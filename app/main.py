@@ -15,6 +15,7 @@ from app.routers.monitoring import router as monitoring_router
 from app.routers.registrations import router as registrations_router
 from app.routers.telegram import router as telegram_router
 from app.schemas import HealthResponse
+from app.telegram_polling_runtime import telegram_polling_service
 
 app = FastAPI(title="Domens MVP", version="0.1.0")
 web_dir = Path(__file__).resolve().parent.parent / "web"
@@ -44,8 +45,10 @@ async def health() -> HealthResponse:
 @app.on_event("startup")
 async def startup_monitor() -> None:
     await monitoring_service.start()
+    await telegram_polling_service.start()
 
 
 @app.on_event("shutdown")
 async def shutdown_monitor() -> None:
     await monitoring_service.stop()
+    await telegram_polling_service.stop()

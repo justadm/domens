@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -44,10 +45,52 @@ class DomainMonitoringService:
         candidates = [f"{word}{tld}" for word in sorted(words) for tld in tlds]
         return candidates
 
+    def _build_query_candidates(self, query: str, tlds: list[str]) -> list[str]:
+        words = [part for part in re.split(r"[^a-z0-9]+", query.lower()) if len(part) >= 2]
+        if not words:
+            return []
+
+        seeds: set[str] = set(words[:3])
+        for word in words[:3]:
+            seeds.add(f"{word}ai")
+            seeds.add(f"{word}lab")
+            seeds.add(f"{word}hub")
+            seeds.add(f"my{word}")
+        return [f"{seed}{tld}" for seed in sorted(seeds) for tld in tlds]
+
+    @staticmethod
+    def _query_matches_domain(query: str, fqdn: str) -> bool:
+        name = fqdn.split(".", 1)[0].lower()
+        words = [part for part in re.split(r"[^a-z0-9]+", query.lower()) if len(part) >= 2]
+        if not words:
+            return False
+        return any(word in name for word in words)
+
     async def run_once(self) -> dict:
-        candidates = self._build_candidates()
+        global_candidates = self._build_candidates()
+        watch_targets = self.store.list_active_watch_targets()
+        rule_candidates_map: dict[str, list[str]] = {}
+        personal_candidates: set[str] = set()
+
+        default_tlds = self._parse_csv(settings.monitor_tlds)
+        for target in watch_targets:
+            tlds = [str(item).strip().lower() for item in (target.get("tlds") or []) if str(item).strip()]
+            tlds = tlds or default_tlds
+            query = str(target.get("query") or "").strip()
+            if not query:
+                continue
+            rc = self._build_query_candidates(query, tlds[:8])
+            if not rc:
+                continue
+            rule_candidates_map[str(target["rule_id"])] = rc
+            personal_candidates.update(rc)
+
+        candidates = sorted(set(global_candidates) | personal_candidates)
         interesting_statuses = {"available", "pending_delete", "redemption", "client_hold"}
         alerts_sent = 0
+        per_target_sent: dict[tuple[str, str], int] = {}
+        per_target_run_limit = 5
+        per_target_lock = asyncio.Lock()
 
         sem = asyncio.Semaphore(12)
 
@@ -67,26 +110,69 @@ class DomainMonitoringService:
 
                 if status not in interesting_statuses:
                     return
-                if score < settings.monitor_alert_min_score:
-                    return
-                if not settings.telegram_chat_id and not settings.max_chat_id:
-                    return
-                if self.store.has_recent_alert(fqdn, within_minutes=settings.monitor_alert_cooldown_minutes):
-                    return
 
-                token = build_confirmation_token()
-                destination = settings.telegram_chat_id or settings.max_chat_id
-                self.store.create_alert(
-                    domain=fqdn,
-                    telegram_chat_id=destination,
-                    token=token,
-                    alert_type="monitor_match",
-                )
-                if settings.telegram_chat_id:
-                    await send_telegram_alert(settings.telegram_chat_id, fqdn, token)
-                if settings.max_chat_id:
-                    await send_max_alert(settings.max_chat_id, fqdn, token)
-                alerts_sent += 1
+                # Global fallback channel behavior (legacy).
+                if score >= settings.monitor_alert_min_score and (settings.telegram_chat_id or settings.max_chat_id):
+                    if not self.store.has_recent_alert(fqdn, within_minutes=settings.monitor_alert_cooldown_minutes):
+                        token = build_confirmation_token()
+                        destination = settings.telegram_chat_id or settings.max_chat_id
+                        self.store.create_alert(
+                            domain=fqdn,
+                            telegram_chat_id=destination,
+                            token=token,
+                            alert_type="monitor_match",
+                        )
+                        if settings.telegram_chat_id:
+                            await send_telegram_alert(settings.telegram_chat_id, fqdn, token)
+                        if settings.max_chat_id:
+                            await send_max_alert(settings.max_chat_id, fqdn, token)
+                        alerts_sent += 1
+
+                # Personalized monitoring by active watch-rules and subscriptions.
+                sent_keys: set[tuple[str, str]] = set()
+                for target in watch_targets:
+                    rule_id = str(target.get("rule_id"))
+                    if fqdn not in rule_candidates_map.get(rule_id, []):
+                        continue
+                    if not self._query_matches_domain(str(target.get("query") or ""), fqdn):
+                        continue
+                    min_score = target.get("min_score")
+                    if min_score is not None and score < float(min_score):
+                        continue
+
+                    channel_type = str(target.get("channel_type") or "").lower()
+                    channel_target = str(target.get("channel_target") or "").strip()
+                    if channel_type not in {"telegram", "max"} or not channel_target:
+                        continue
+                    key = (channel_type, channel_target)
+                    if key in sent_keys:
+                        continue
+                    async with per_target_lock:
+                        if per_target_sent.get(key, 0) >= per_target_run_limit:
+                            continue
+                        if self.store.has_recent_alert_for_destination(
+                            fqdn,
+                            destination=channel_target,
+                            within_minutes=settings.monitor_alert_cooldown_minutes,
+                        ):
+                            continue
+                        per_target_sent[key] = per_target_sent.get(key, 0) + 1
+
+                    token = build_confirmation_token()
+                    self.store.create_alert(
+                        domain=fqdn,
+                        telegram_chat_id=channel_target,
+                        token=token,
+                        alert_type=f"watch_rule_match:{rule_id}",
+                    )
+
+                    if channel_type == "telegram":
+                        await send_telegram_alert(channel_target, fqdn, token)
+                    else:
+                        await send_max_alert(channel_target, fqdn, token)
+
+                    sent_keys.add(key)
+                    alerts_sent += 1
 
         await asyncio.gather(*(process_domain(fqdn) for fqdn in candidates))
 

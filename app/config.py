@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""
     telegram_chat_id: str = ""
     telegram_disclaimer_version: str = "v1"
+    telegram_polling_enabled: bool = False
+    telegram_polling_timeout_seconds: int = 25
+    telegram_polling_allowed_updates: str = "message,callback_query"
 
     postgres_dsn: str = "postgresql://domens:domens@localhost:5432/domens"
     redis_url: str = "redis://localhost:6379/0"
