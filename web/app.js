@@ -30,7 +30,8 @@ const I18N = {
     auth_guest: "Гость",
     auth_logged_as: "Вход:",
     auth_logout: "Выйти",
-    auth_login_hint: "Вход через Telegram",
+    auth_login_hint: "Вход через Telegram/MAX",
+    auth_max_login: "Войти через MAX",
     cabinet_title: "Кабинет",
     cabinet_refresh: "Обновить",
     cabinet_profile: "Профиль",
@@ -92,7 +93,8 @@ const I18N = {
     auth_guest: "Guest",
     auth_logged_as: "Signed in:",
     auth_logout: "Logout",
-    auth_login_hint: "Sign in with Telegram",
+    auth_login_hint: "Sign in with Telegram/MAX",
+    auth_max_login: "Sign in with MAX",
     cabinet_title: "Cabinet",
     cabinet_refresh: "Refresh",
     cabinet_profile: "Profile",
@@ -255,6 +257,10 @@ function applyLanguage(lang) {
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.textContent = dict.auth_logout;
+  }
+  const maxLoginBtn = document.getElementById("max-login-btn");
+  if (maxLoginBtn) {
+    maxLoginBtn.textContent = dict.auth_max_login;
   }
 }
 
@@ -532,8 +538,9 @@ function renderAuthState(authenticated, user) {
   const userLine = document.getElementById("auth-user-line");
   const logoutBtn = document.getElementById("logout-btn");
   const widgetRoot = document.getElementById("tg-auth-widget");
+  const maxLoginBtn = document.getElementById("max-login-btn");
 
-  if (!userLine || !logoutBtn || !widgetRoot) {
+  if (!userLine || !logoutBtn || !widgetRoot || !maxLoginBtn) {
     return;
   }
 
@@ -542,6 +549,7 @@ function renderAuthState(authenticated, user) {
     userLine.textContent = `${dict.auth_logged_as} ${username}`;
     logoutBtn.classList.remove("hidden");
     widgetRoot.classList.add("hidden");
+    maxLoginBtn.classList.add("hidden");
     authState = { authenticated: true, user };
     return;
   }
@@ -549,6 +557,11 @@ function renderAuthState(authenticated, user) {
   userLine.textContent = `${dict.auth_guest}. ${dict.auth_login_hint}`;
   logoutBtn.classList.add("hidden");
   widgetRoot.classList.remove("hidden");
+  if (!maxLoginBtn.dataset.enabled || maxLoginBtn.dataset.enabled !== "true") {
+    maxLoginBtn.classList.add("hidden");
+  } else {
+    maxLoginBtn.classList.remove("hidden");
+  }
   authState = { authenticated: false, user: null };
 }
 
@@ -600,6 +613,27 @@ async function initTelegramAuthWidget() {
     widgetRoot.appendChild(script);
   } catch {
     widgetRoot.textContent = "Telegram auth unavailable";
+  }
+}
+
+async function initMaxAuth() {
+  const maxLoginBtn = document.getElementById("max-login-btn");
+  if (!maxLoginBtn) return;
+
+  maxLoginBtn.dataset.enabled = "false";
+  maxLoginBtn.classList.add("hidden");
+
+  try {
+    const config = await api("/v1/auth/max/config");
+    if (!config.enabled) {
+      return;
+    }
+    maxLoginBtn.dataset.enabled = "true";
+    if (!authState.authenticated) {
+      maxLoginBtn.classList.remove("hidden");
+    }
+  } catch {
+    maxLoginBtn.dataset.enabled = "false";
   }
 }
 
@@ -707,6 +741,19 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
     // keep UI state change even if server already dropped session
   }
   await refreshAuth();
+});
+
+document.getElementById("max-login-btn").addEventListener("click", async () => {
+  try {
+    const data = await api("/v1/auth/max/login-url");
+    if (!data.enabled || !data.url) {
+      document.getElementById("auth-user-line").textContent = "MAX OAuth is not configured";
+      return;
+    }
+    window.location.href = data.url;
+  } catch (err) {
+    document.getElementById("auth-user-line").textContent = String(err);
+  }
 });
 
 document.getElementById("cabinet-refresh-btn").addEventListener("click", async () => {
@@ -874,6 +921,7 @@ applyLanguage(currentLang);
 setupMenu();
 setupSorting();
 initTelegramAuthWidget();
+initMaxAuth();
 refreshAuth();
 refreshHealth();
 refreshActivity();

@@ -4,10 +4,14 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from typing import Any
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.config import settings
@@ -17,6 +21,7 @@ router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 COOKIE_NAME = "domens_session"
 TELEGRAM_AUTH_MAX_AGE_SECONDS = 24 * 60 * 60
+_max_oauth_states: dict[str, int] = {}
 
 
 class TelegramLoginRequest(BaseModel):
@@ -44,6 +49,16 @@ class AuthSessionResponse(BaseModel):
 class TelegramWidgetConfigResponse(BaseModel):
     enabled: bool
     bot_username: str | None = None
+
+
+class MaxOauthConfigResponse(BaseModel):
+    enabled: bool
+    label: str = "MAX"
+
+
+class MaxOauthLoginUrlResponse(BaseModel):
+    enabled: bool
+    url: str | None = None
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -161,6 +176,24 @@ def _get_current_user(request: Request) -> AuthUserResponse | None:
     )
 
 
+def _is_max_oauth_configured() -> bool:
+    return bool(
+        settings.max_oauth_enabled
+        and settings.max_oauth_authorize_url
+        and settings.max_oauth_token_url
+        and settings.max_oauth_userinfo_url
+        and settings.max_oauth_client_id
+        and settings.max_oauth_client_secret
+        and settings.max_oauth_redirect_uri
+    )
+
+
+def _cleanup_max_states(now_ts: int) -> None:
+    expired = [key for key, exp in _max_oauth_states.items() if exp <= now_ts]
+    for key in expired:
+        _max_oauth_states.pop(key, None)
+
+
 def get_authenticated_user(request: Request) -> AuthUserResponse | None:
     return _get_current_user(request)
 
@@ -172,6 +205,32 @@ async def telegram_widget_config() -> TelegramWidgetConfigResponse:
         enabled=enabled,
         bot_username=settings.telegram_bot_username if enabled else None,
     )
+
+
+@router.get("/max/config", response_model=MaxOauthConfigResponse)
+async def max_oauth_config() -> MaxOauthConfigResponse:
+    return MaxOauthConfigResponse(enabled=_is_max_oauth_configured())
+
+
+@router.get("/max/login-url", response_model=MaxOauthLoginUrlResponse)
+async def max_oauth_login_url() -> MaxOauthLoginUrlResponse:
+    if not _is_max_oauth_configured():
+        return MaxOauthLoginUrlResponse(enabled=False, url=None)
+
+    now_ts = int(time.time())
+    _cleanup_max_states(now_ts)
+    state = secrets.token_urlsafe(24)
+    _max_oauth_states[state] = now_ts + max(60, settings.max_oauth_state_ttl_seconds)
+
+    params = {
+        "response_type": "code",
+        "client_id": settings.max_oauth_client_id,
+        "redirect_uri": settings.max_oauth_redirect_uri,
+        "scope": settings.max_oauth_scope,
+        "state": state,
+    }
+    url = f"{settings.max_oauth_authorize_url}?{urlencode(params)}"
+    return MaxOauthLoginUrlResponse(enabled=True, url=url)
 
 
 @router.post("/telegram/login", response_model=AuthSessionResponse)
@@ -207,6 +266,83 @@ async def telegram_login(payload: TelegramLoginRequest, request: Request, respon
             locale=user.locale,
         ),
     )
+
+
+@router.get("/max/callback")
+async def max_oauth_callback(
+    request: Request,
+    response: Response,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    if error:
+        raise HTTPException(status_code=400, detail=f"max oauth error: {error}")
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="missing code/state")
+    if not _is_max_oauth_configured():
+        raise HTTPException(status_code=400, detail="max oauth not configured")
+
+    now_ts = int(time.time())
+    _cleanup_max_states(now_ts)
+    state_exp = _max_oauth_states.pop(state, None)
+    if not state_exp or state_exp <= now_ts:
+        raise HTTPException(status_code=400, detail="invalid oauth state")
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        token_resp = await client.post(
+            settings.max_oauth_token_url,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": settings.max_oauth_client_id,
+                "client_secret": settings.max_oauth_client_secret,
+                "redirect_uri": settings.max_oauth_redirect_uri,
+            },
+        )
+        if token_resp.status_code >= 400:
+            raise HTTPException(status_code=401, detail="max oauth token exchange failed")
+        token_data = token_resp.json() if token_resp.content else {}
+        access_token = str(token_data.get("access_token") or "")
+        if not access_token:
+            raise HTTPException(status_code=401, detail="max oauth access token missing")
+
+        userinfo_resp = await client.get(
+            settings.max_oauth_userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if userinfo_resp.status_code >= 400:
+            raise HTTPException(status_code=401, detail="max oauth userinfo failed")
+        profile = userinfo_resp.json() if userinfo_resp.content else {}
+
+    user_id = str(profile.get("id") or profile.get("user_id") or profile.get("sub") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="max oauth user id missing")
+    username = str(profile.get("username") or profile.get("login") or "").strip() or None
+    first_name = str(profile.get("first_name") or profile.get("name") or "").strip() or None
+    locale = str(profile.get("locale") or profile.get("language") or "").strip() or None
+
+    user = store.upsert_telegram_user(
+        telegram_user_id=f"max:{user_id}",
+        telegram_chat_id=None,
+        username=username,
+        first_name=first_name,
+        locale=locale,
+    )
+    store.log_bot_event("max_oauth_login", telegram_user_id=user.telegram_user_id, payload={"provider": "max"})
+
+    token = _build_session_token(user.telegram_user_id)
+    redirect = RedirectResponse(url="/?auth=max_ok", status_code=302)
+    redirect.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=max(60, settings.auth_jwt_ttl_seconds),
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+        path="/",
+    )
+    return redirect
 
 
 @router.get("/me", response_model=AuthSessionResponse)

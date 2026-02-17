@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     max_base_url: str = "https://platform-api.max.ru"
     max_token: str = ""
     max_chat_id: str = ""
+    max_oauth_enabled: bool = False
+    max_oauth_authorize_url: str = ""
+    max_oauth_token_url: str = ""
+    max_oauth_userinfo_url: str = ""
+    max_oauth_client_id: str = ""
+    max_oauth_client_secret: str = ""
+    max_oauth_redirect_uri: str = ""
+    max_oauth_scope: str = "openid profile"
+    max_oauth_state_ttl_seconds: int = 600
 
     auth_jwt_secret: str = "change_me"
     auth_jwt_ttl_seconds: int = 604800
