@@ -1,0 +1,58 @@
+from fastapi import APIRouter, HTTPException
+
+from app.schemas import (
+    ConfirmRegistrationRequest,
+    ConfirmRegistrationResponse,
+    ExecuteRegistrationResponse,
+)
+from app.services.registrar import RegistrarClient
+from app.state import store
+
+router = APIRouter(prefix="/v1/registrations", tags=["registrations"])
+registrar_client = RegistrarClient()
+
+
+@router.post("/confirm", response_model=ConfirmRegistrationResponse)
+async def confirm_registration(
+    payload: ConfirmRegistrationRequest,
+) -> ConfirmRegistrationResponse:
+    alert = store.get_alert_by_token(payload.confirmation_token)
+    if not alert:
+        raise HTTPException(status_code=404, detail="confirmation token not found")
+
+    if alert.acknowledged:
+        existing_order = next(
+            (o for o in store.orders_by_id.values() if o.domain == alert.domain),
+            None,
+        )
+        if existing_order:
+            return ConfirmRegistrationResponse(
+                order_id=existing_order.order_id,
+                domain=existing_order.domain,
+                status=existing_order.status,
+            )
+
+    store.mark_alert_acknowledged(payload.confirmation_token)
+    order = store.create_order(alert.domain)
+    return ConfirmRegistrationResponse(
+        order_id=order.order_id,
+        domain=order.domain,
+        status=order.status,
+    )
+
+
+@router.post("/{order_id}/execute", response_model=ExecuteRegistrationResponse)
+async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
+    order = store.get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+
+    store.set_order_status(order_id, "sent_to_registrar")
+    registrar_response = await registrar_client.register_domain(order.domain)
+    store.set_order_status(order_id, "registered")
+
+    return ExecuteRegistrationResponse(
+        order_id=order_id,
+        status="registered",
+        registrar_response=registrar_response,
+    )
