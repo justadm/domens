@@ -9,6 +9,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY web ./web
+COPY alembic ./alembic
+COPY alembic.ini ./
+COPY docs ./docs
 COPY .env.example ./
 
 EXPOSE 8080

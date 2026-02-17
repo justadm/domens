@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Domens Radar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <span class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 64 64" role="img">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#4ea1ff" />
+                  <stop offset="100%" stop-color="#2673ff" />
+                </linearGradient>
+              </defs>
+              <rect x="6" y="18" width="52" height="30" rx="8" fill="url(#g1)" />
+              <circle cx="21" cy="32" r="6" fill="#e7f1ff" />
+              <circle cx="32" cy="32" r="6" fill="#e7f1ff" />
+              <circle cx="43" cy="32" r="6" fill="#e7f1ff" />
+            </svg>
+          </span>
+          <div>
+            <strong>Domens Radar</strong>
+            <small>Control Panel</small>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <a class="nav-item active js-menu-link" href="#overview-section">Обзор</a>
+
+          <details class="nav-group" data-group="dns" open>
+            <summary>DNS</summary>
+            <a class="nav-sub active js-menu-link" href="#scanner-section">Рейтинги доменов</a>
+            <a class="nav-sub js-menu-link" href="#activity-section">Информация о домене</a>
+            <a class="nav-sub muted" href="#">Категоризация <span class="badge">Скоро</span></a>
+          </details>
+
+          <details class="nav-group" data-group="monitoring" open>
+            <summary>Мониторинг</summary>
+            <a class="nav-sub js-menu-link" href="#scanner-section">Сканер</a>
+            <a class="nav-sub js-menu-link" href="#alert-section">Алерты</a>
+            <a class="nav-sub js-menu-link" href="#monitor-section">Запуск цикла</a>
+          </details>
+
+          <details class="nav-group" data-group="tools" open>
+            <summary>Инструменты</summary>
+            <a class="nav-sub js-menu-link" href="#registration-section">Регистрация</a>
+            <a class="nav-sub muted" href="#">Data Explorer <span class="badge">Скоро</span></a>
+            <a class="nav-sub muted" href="#">Отчеты <span class="badge">Скоро</span></a>
+          </details>
+
+          <details class="nav-group" data-group="api" open>
+            <summary>API</summary>
+            <a class="nav-sub" href="/docs" target="_blank" rel="noreferrer">Swagger</a>
+            <a class="nav-sub muted" href="#">Документация <span class="badge">Скоро</span></a>
+          </details>
+        </nav>
+      </aside>
+
+      <div class="main-wrap">
+        <header class="main-header panel" id="overview-section">
+          <div>
+            <h1>Domain Intelligence</h1>
+            <p class="subtitle">Проверка доступности, алерты и регистрация в один поток.</p>
+          </div>
+
+          <div class="controls">
+            <div class="auth-box panel-lite">
+              <div id="auth-user-line" class="auth-user-line">Гость</div>
+              <div id="tg-auth-widget" class="tg-auth-widget"></div>
+              <button type="button" id="logout-btn" class="btn-ghost hidden">Выйти</button>
+            </div>
+
+            <label class="control">
+              <span data-i18n="lang">Язык</span>
+              <select id="lang-select">
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+
+            <label class="control">
+              <span data-i18n="theme">Тема</span>
+              <select id="theme-select">
+                <option value="dark">Темная</option>
+                <option value="light">Светлая</option>
+              </select>
+            </label>
+
+            <div class="health-badge" id="api-health">API: online</div>
+          </div>
+        </header>
+
+        <main class="layout">
+          <section class="stats">
+            <article class="stat panel">
+              <p data-i18n="metric_checked">Проверено</p>
+              <h3 id="metric-checked">0</h3>
+            </article>
+            <article class="stat panel">
+              <p data-i18n="metric_available">Available</p>
+              <h3 id="metric-available">0</h3>
+            </article>
+            <article class="stat panel">
+              <p data-i18n="metric_pending">Pending Delete</p>
+              <h3 id="metric-pending">0</h3>
+            </article>
+            <article class="stat panel">
+              <p data-i18n="metric_score">Средний Score</p>
+              <h3 id="metric-score">0</h3>
+            </article>
+          </section>
+
+          <section class="panel checker" id="scanner-section">
+            <div class="section-head">
+              <h2 data-i18n="scanner_title">Domain Scanner</h2>
+              <button type="button" class="btn-secondary" id="run-monitor-btn" data-i18n="monitor_run">Run monitoring once</button>
+            </div>
+            <form id="check-form" class="form-stack">
+              <label>
+                <span data-i18n="scanner_domains">Domains (one per line)</span>
+                <textarea id="domains-input" rows="6" placeholder="brandflow.ai&#10;futurestack.io&#10;mcp-clouds.ru"></textarea>
+              </label>
+              <button type="submit" class="btn-primary" data-i18n="scanner_run">Run Scan</button>
+            </form>
+
+            <div class="table-wrap">
+              <table id="results-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="th_domain" data-sort="domain">Domain</th>
+                    <th data-i18n="th_status" data-sort="status">Status</th>
+                    <th data-i18n="th_score" data-sort="score">Score</th>
+                    <th data-i18n="th_eta" data-sort="eta">Drop ETA</th>
+                  </tr>
+                </thead>
+                <tbody id="results-body"></tbody>
+              </table>
+            </div>
+            <pre id="check-output" class="output hidden"></pre>
+            <pre id="monitor-output" class="output hidden"></pre>
+          </section>
+
+          <section class="actions-grid">
+            <section class="panel" id="alert-section">
+              <h2 data-i18n="alert_title">Telegram Alert</h2>
+              <form id="alert-form" class="form-stack">
+                <label>
+                  <span data-i18n="alert_domain">Domain</span>
+                  <input id="alert-domain" placeholder="freebrand.com" />
+                </label>
+                <label>
+                  <span data-i18n="alert_chat">Chat ID</span>
+                  <input id="alert-chat-id" placeholder="из .env TELEGRAM_CHAT_ID" />
+                </label>
+                <button type="submit" class="btn-primary" data-i18n="alert_send">Send Alert</button>
+              </form>
+              <pre id="alert-output" class="output"></pre>
+            </section>
+
+            <section class="right-stack">
+              <section class="panel" id="registration-section">
+                <h2 data-i18n="reg_title">Registration Pipeline</h2>
+                <form id="confirm-form" class="form-stack">
+                  <label>
+                    <span data-i18n="reg_token">Confirmation token</span>
+                    <input id="confirm-token" placeholder="cfm_..." />
+                  </label>
+                  <button type="submit" class="btn-primary" data-i18n="reg_confirm">Confirm</button>
+                </form>
+                <form id="execute-form" class="form-stack">
+                  <label>
+                    <span data-i18n="reg_order">Order ID</span>
+                    <input id="execute-order-id" placeholder="ord_..." />
+                  </label>
+                  <button type="submit" class="btn-secondary" data-i18n="reg_execute">Execute</button>
+                </form>
+                <pre id="registration-output" class="output"></pre>
+              </section>
+
+              <section class="panel" id="activity-section">
+                <h2 data-i18n="activity_title">Последние события</h2>
+                <div id="activity-feed" class="activity-feed"></div>
+              </section>
+            </section>
+          </section>
+
+          <section id="monitor-section"></section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/web/app.js"></script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
-from app.services.store import InMemoryStore
+from app.config import settings
+from app.services.store import PostgresStore
 
-store = InMemoryStore()
+store = PostgresStore(settings.postgres_dsn)

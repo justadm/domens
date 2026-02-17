@@ -10,6 +10,8 @@ MVP-сервис для поиска/отслеживания востребов
 ## Что в репозитории
 - `docs/db_schema.sql` — схема PostgreSQL
 - `docs/api_contracts.md` — API-контракты между модулями и внешними клиентами
+- `docs/domain_base_strategy.md` — как собирать релевантную базу доменов
+- `docs/telegram_bot_scope.md` — продуктовый scope Telegram-бота (команды, дисклеймер, подписки, этапы)
 - `app/` — каркас backend (FastAPI)
 
 ## Быстрый старт
@@ -35,16 +37,23 @@ docker compose up --build -d
 Проверка:
 - API: http://127.0.0.1:8080/health
 - Swagger: http://127.0.0.1:8080/docs
+- Web UI: http://127.0.0.1:8080/
 
 ## Make команды
 ```bash
 cd /Users/just/projects/domens
 make up
 make ps
+make db-migrate
 make health
 make logs
 make down
 ```
+
+## База данных
+- В рантайме используется PostgreSQL (без in-memory store).
+- Миграции выполняются через Alembic.
+- В Docker-режиме `api` выполняет `alembic upgrade head` перед запуском Uvicorn.
 
 ## Telegram flow (MVP)
 1. Сервис находит домен-кандидат.
@@ -53,12 +62,23 @@ make down
    - `Пропустить`
    - `Зарегистрировать`
 4. При нажатии `Зарегистрировать` идет callback на backend.
-5. Backend создает задачу регистрации через API регистратора и присылает результат.
+5. Backend автоматически подтверждает и сразу запускает регистрацию через API регистратора.
 
 ## Провайдеры
 - Регистратор: Timeweb (`TIMEWEB_API_*`), используется endpoint `POST /api/v1/add-domain/{fqdn}`.
+- Резервный регистратор: Reg.ru (`REG_RU_*`) в fallback-цепочке.
 - Проверка домена: Timeweb (`GET /api/v1/check-domain/{fqdn}`) с fallback на эвристику.
-- DR-профиль: Selectel переменные уже заведены в `.env` для следующего этапа интеграции.
+- DNS reserve: Selectel DNS Hosting (`SELECTEL_*`) через `ensure_zone` при fail основного регистратора.
+- Резервный канал уведомлений: MAX (`MAX_*`) + webhook `POST /v1/max/webhook`.
+
+## Мониторинг доменов
+- Фоновый мониторинг включен по умолчанию (`MONITOR_ENABLED=true`).
+- Кандидаты строятся из `MONITOR_SEED_WORDS x MONITOR_TLDS`.
+- Алерты отправляются в Telegram и/или MAX (если настроены chat id).
+- Ручной запуск цикла:
+```bash
+curl -X POST http://127.0.0.1:8080/v1/monitoring/run-once
+```
 
 ## Ограничения MVP
 - Хранилище сейчас in-memory для быстрого старта API.

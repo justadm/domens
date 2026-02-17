@@ -22,10 +22,7 @@ async def confirm_registration(
         raise HTTPException(status_code=404, detail="confirmation token not found")
 
     if alert.acknowledged:
-        existing_order = next(
-            (o for o in store.orders_by_id.values() if o.domain == alert.domain),
-            None,
-        )
+        existing_order = store.get_latest_order_by_domain(alert.domain)
         if existing_order:
             return ConfirmRegistrationResponse(
                 order_id=existing_order.order_id,
@@ -48,9 +45,16 @@ async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
     if not order:
         raise HTTPException(status_code=404, detail="order not found")
 
+    if order.status in {"registered", "failed", "canceled"}:
+        return ExecuteRegistrationResponse(
+            order_id=order_id,
+            status=order.status,
+            registrar_response={"result": "already_terminal", "domain": order.domain},
+        )
+
     store.set_order_status(order_id, "sent_to_registrar")
     registrar_response = await registrar_client.register_domain(order.domain)
-    if registrar_response.get("result") == "registered":
+    if registrar_response.get("result") in {"registered", "reserved_dns_zone"}:
         store.set_order_status(order_id, "registered")
         status = "registered"
     else:

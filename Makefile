@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: up down restart ps logs health build clean
+.PHONY: up down restart ps logs health build clean db-migrate
 
 up:
 	@if [ ! -f .env ]; then cp .env.example .env; fi
@@ -26,6 +26,9 @@ health:
 
 build:
 	docker compose build --no-cache
+
+db-migrate:
+	docker compose run --rm api alembic upgrade head
 
 clean:
 	docker compose down -v --remove-orphans

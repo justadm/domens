@@ -6,7 +6,9 @@ class Settings(BaseSettings):
     app_port: int = 8080
 
     telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
     telegram_chat_id: str = ""
+    telegram_disclaimer_version: str = "v1"
 
     postgres_dsn: str = "postgresql://domens:domens@localhost:5432/domens"
     redis_url: str = "redis://localhost:6379/0"
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
     timeweb_app_id: str = ""
 
     selectel_api_base_url: str = "https://api.selectel.ru"
+    selectel_domains_base_url: str = "https://api.selectel.ru/domains/v2"
     selectel_auth_token: str = ""
     selectel_static_token: str = ""
     selectel_deploy_start_path: str = ""
@@ -23,8 +26,26 @@ class Settings(BaseSettings):
     selectel_deploy_logs_path_template: str = ""
 
     registrar_provider: str = "timeweb"
+    registrar_fallback_enabled: bool = True
+    reg_ru_api_base_url: str = "https://api.reg.ru/api/regru2"
+    reg_ru_username: str = ""
+    reg_ru_password: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    max_base_url: str = "https://platform-api.max.ru"
+    max_token: str = ""
+    max_chat_id: str = ""
+
+    auth_jwt_secret: str = "change_me"
+    auth_jwt_ttl_seconds: int = 604800
+
+    monitor_enabled: bool = True
+    monitor_interval_seconds: int = 300
+    monitor_tlds: str = ".com,.io,.ai,.ru"
+    monitor_seed_words: str = "agent,cloud,data,stack,flow,grid,lab,core"
+    monitor_alert_min_score: float = 70.0
+    monitor_alert_cooldown_minutes: int = 180
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()
