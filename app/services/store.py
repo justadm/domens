@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     Text,
+    UniqueConstraint,
     create_engine,
     desc,
     select,
@@ -194,6 +195,30 @@ class UserSubscriptionModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RoleModel(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class UserRoleModel(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (UniqueConstraint("user_id", "role_id", name="uq_user_roles_user_role"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("telegram_users.id"), nullable=False)
+    role_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id"), nullable=False)
+    granted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
@@ -673,6 +698,181 @@ class PostgresStore:
                 disclaimer_version=user.disclaimer_version,
             )
 
+    def ensure_base_roles(self) -> None:
+        base_roles = {
+            "viewer": "Viewer",
+            "operator": "Operator",
+            "admin": "Admin",
+            "superadmin": "Superadmin",
+        }
+        with self._session() as session:
+            existing_rows = session.execute(select(RoleModel.code, RoleModel.id)).all()
+            existing = {str(code): str(role_id) for code, role_id in existing_rows}
+            changed = False
+            for code, title in base_roles.items():
+                if code in existing:
+                    continue
+                session.add(RoleModel(code=code, title=title))
+                changed = True
+            if changed:
+                session.commit()
+
+    def list_roles(self) -> list[dict]:
+        with self._session() as session:
+            rows = session.execute(select(RoleModel).order_by(RoleModel.code.asc())).scalars().all()
+            return [{"id": str(r.id), "code": r.code, "title": r.title, "created_at": r.created_at.isoformat()} for r in rows]
+
+    def list_user_role_codes(self, telegram_user_id: str) -> list[str]:
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel.id).where(TelegramUserModel.telegram_user_id == str(telegram_user_id)).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return []
+            rows = session.execute(
+                select(RoleModel.code)
+                .join(UserRoleModel, UserRoleModel.role_id == RoleModel.id)
+                .where(UserRoleModel.user_id == user)
+                .order_by(RoleModel.code.asc())
+            ).all()
+            return [str(item[0]) for item in rows]
+
+    def has_any_role(self, telegram_user_id: str, role_codes: list[str]) -> bool:
+        requested = {str(code).strip().lower() for code in role_codes if str(code).strip()}
+        if not requested:
+            return False
+        roles = {item.lower() for item in self.list_user_role_codes(telegram_user_id)}
+        return bool(roles & requested)
+
+    def grant_role(self, telegram_user_id: str, role_code: str, granted_by: str | None = None) -> bool:
+        safe_uid = str(telegram_user_id).strip()
+        safe_code = str(role_code).strip().lower()
+        if not safe_uid or not safe_code:
+            return False
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                user = TelegramUserModel(
+                    telegram_user_id=safe_uid,
+                    telegram_chat_id=None,
+                    username=None,
+                    first_name=None,
+                    locale=None,
+                    is_active=True,
+                )
+                session.add(user)
+                session.flush()
+
+            role = session.execute(select(RoleModel).where(RoleModel.code == safe_code).limit(1)).scalar_one_or_none()
+            if not role:
+                return False
+
+            exists = session.execute(
+                select(UserRoleModel.id)
+                .where(UserRoleModel.user_id == user.id)
+                .where(UserRoleModel.role_id == role.id)
+                .limit(1)
+            ).scalar_one_or_none()
+            if exists:
+                return True
+
+            session.add(
+                UserRoleModel(
+                    user_id=user.id,
+                    role_id=role.id,
+                    granted_by=granted_by.strip() if granted_by else None,
+                )
+            )
+            session.commit()
+            return True
+
+    def revoke_role(self, telegram_user_id: str, role_code: str) -> bool:
+        safe_uid = str(telegram_user_id).strip()
+        safe_code = str(role_code).strip().lower()
+        if not safe_uid or not safe_code:
+            return False
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return False
+            role = session.execute(select(RoleModel).where(RoleModel.code == safe_code).limit(1)).scalar_one_or_none()
+            if not role:
+                return False
+
+            rows = session.execute(
+                select(UserRoleModel)
+                .where(UserRoleModel.user_id == user.id)
+                .where(UserRoleModel.role_id == role.id)
+            ).scalars().all()
+            if not rows:
+                return False
+            for row in rows:
+                session.delete(row)
+            session.commit()
+            return True
+
+    def list_users_with_roles(self, search: str | None = None, limit: int = 100) -> list[dict]:
+        safe_limit = max(1, min(500, int(limit)))
+        q = (search or "").strip().lower()
+        with self._session() as session:
+            users = session.execute(
+                select(TelegramUserModel).order_by(desc(TelegramUserModel.updated_at)).limit(safe_limit * 2)
+            ).scalars().all()
+
+            role_rows = session.execute(
+                select(UserRoleModel.user_id, RoleModel.code)
+                .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
+            ).all()
+            role_map: dict[uuid.UUID, list[str]] = {}
+            for user_id, code in role_rows:
+                role_map.setdefault(user_id, []).append(str(code))
+
+            items: list[dict] = []
+            for user in users:
+                roles = sorted({item for item in role_map.get(user.id, [])})
+                if q:
+                    hay = " ".join(
+                        [
+                            user.telegram_user_id or "",
+                            user.username or "",
+                            user.first_name or "",
+                            user.telegram_chat_id or "",
+                            " ".join(roles),
+                        ]
+                    ).lower()
+                    if q not in hay:
+                        continue
+                items.append(
+                    {
+                        "telegram_user_id": user.telegram_user_id,
+                        "username": user.username,
+                        "first_name": user.first_name,
+                        "chat_id": user.telegram_chat_id,
+                        "is_active": bool(user.is_active),
+                        "roles": roles,
+                        "updated_at": user.updated_at.isoformat(),
+                    }
+                )
+                if len(items) >= safe_limit:
+                    break
+            return items
+
+    def sync_admin_roles_from_env(self, admin_user_ids: list[str], granted_by: str = "system:env_sync") -> int:
+        if not admin_user_ids:
+            return 0
+        changed = 0
+        for user_id in {str(item).strip() for item in admin_user_ids if str(item).strip()}:
+            ok = self.grant_role(user_id, "admin", granted_by=granted_by)
+            if ok:
+                changed += 1
+        return changed
+
     def mark_disclaimer_accepted(self, telegram_user_id: str, version: str) -> None:
         with self._session() as session:
             user = session.execute(
@@ -779,6 +979,30 @@ class PostgresStore:
                         "channel_target": sub.channel_target,
                     }
                 )
+            return result
+
+    def list_telegram_chats_by_user_ids(self, telegram_user_ids: list[str]) -> list[str]:
+        normalized = [str(item).strip() for item in telegram_user_ids if str(item).strip()]
+        if not normalized:
+            return []
+
+        with self._session() as session:
+            rows = session.execute(
+                select(TelegramUserModel.telegram_chat_id)
+                .where(TelegramUserModel.telegram_user_id.in_(normalized))
+                .where(TelegramUserModel.telegram_chat_id.is_not(None))
+                .where(TelegramUserModel.is_active.is_(True))
+                .where(TelegramUserModel.disclaimer_accepted_at.is_not(None))
+            ).all()
+            # Keep deterministic ordering and uniqueness.
+            seen: set[str] = set()
+            result: list[str] = []
+            for row in rows:
+                chat_id = str(row[0]).strip()
+                if not chat_id or chat_id in seen:
+                    continue
+                seen.add(chat_id)
+                result.append(chat_id)
             return result
 
     def update_watch_rule(

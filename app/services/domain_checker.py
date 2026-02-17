@@ -4,7 +4,9 @@ from app.services.timeweb_api import TimewebApiClient
 
 
 async def infer_status(
-    domain: str, timeweb_client: TimewebApiClient | None = None
+    domain: str,
+    timeweb_client: TimewebApiClient | None = None,
+    allow_heuristic_fallback: bool = True,
 ) -> tuple[str, datetime | None]:
     """
     MVP heuristic:
@@ -26,10 +28,15 @@ async def infer_status(
                     if normalized == "pending_delete":
                         return "pending_delete", datetime.now(timezone.utc) + timedelta(hours=36)
                     return normalized, None
+            if not allow_heuristic_fallback:
+                return "registered", None
         except Exception:
             # Fallback to heuristic flow if provider check fails.
-            pass
+            if not allow_heuristic_fallback:
+                return "registered", None
 
+    if not allow_heuristic_fallback:
+        return "registered", None
     lowered = domain.lower()
     if lowered.endswith(".ai") and len(lowered.split(".")[0]) <= 10:
         return "pending_delete", datetime.now(timezone.utc) + timedelta(hours=36)

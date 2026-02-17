@@ -39,6 +39,8 @@ class AuthUserResponse(BaseModel):
     username: str | None = None
     first_name: str | None = None
     locale: str | None = None
+    roles: list[str] = []
+    is_admin: bool = False
 
 
 class AuthSessionResponse(BaseModel):
@@ -168,11 +170,16 @@ def _get_current_user(request: Request) -> AuthUserResponse | None:
     if not user:
         return None
 
+    roles = store.list_user_role_codes(user.telegram_user_id)
+    env_admins = {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
+    is_admin = "admin" in roles or "superadmin" in roles or user.telegram_user_id in env_admins
     return AuthUserResponse(
         telegram_user_id=user.telegram_user_id,
         username=user.username,
         first_name=user.first_name,
         locale=user.locale,
+        roles=roles,
+        is_admin=is_admin,
     )
 
 
@@ -264,6 +271,10 @@ async def telegram_login(payload: TelegramLoginRequest, request: Request, respon
             username=user.username,
             first_name=user.first_name,
             locale=user.locale,
+            roles=store.list_user_role_codes(user.telegram_user_id),
+            is_admin=bool(
+                user.telegram_user_id in {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
+            ),
         ),
     )
 

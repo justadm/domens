@@ -34,7 +34,7 @@ class TimewebApiClient:
         response.raise_for_status()
         payload = self._parse_json_safely(response)
 
-        available = self._first_bool(payload, ["available", "is_available", "free"])
+        available = self._first_bool(payload, ["available", "is_available", "is_domain_available", "free"])
         status = self._first_str(payload, ["status", "domain_status", "state"])
 
         if available is None and isinstance(payload.get("result"), str):

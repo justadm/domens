@@ -24,7 +24,7 @@ async def send_telegram_alert(chat_id: str, domain: str, token: str) -> dict:
     payload = {
         "chat_id": chat_id,
         "text": (
-            f"Домен-кандидат: {domain}\\n"
+            f"Домен-кандидат: {domain}\n"
             "Нажми «Зарегистрировать», чтобы создать заказ на регистрацию."
         ),
         "reply_markup": {
@@ -125,7 +125,7 @@ async def send_max_alert(chat_id: str, domain: str, token: str) -> dict:
     base_url = settings.max_base_url.rstrip("/")
     url = f"{base_url}/messages"
     payload = {
-        "text": f"Домен-кандидат: {domain}\\nПодтверди регистрацию:",
+        "text": f"Домен-кандидат: {domain}\nПодтверди регистрацию:",
         "attachments": [
             {
                 "type": "inline_keyboard",

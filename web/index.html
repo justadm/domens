@@ -225,6 +225,41 @@
                 </div>
                 <div id="cabinet-history" class="list-box"></div>
               </article>
+
+              <article class="cabinet-card hidden" id="cabinet-admin-card">
+                <h3 data-i18n="cabinet_admin">Админ</h3>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_admin_search">Поиск пользователей</span>
+                    <input id="cabinet-admin-search" placeholder="@username / user_id" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_limit">Лимит</span>
+                    <input id="cabinet-admin-limit" type="number" min="1" max="200" value="50" />
+                  </label>
+                </div>
+                <button type="button" class="btn-ghost" id="cabinet-admin-refresh-btn">Refresh admin</button>
+                <div id="cabinet-admin-users" class="list-box"></div>
+                <form id="cabinet-admin-role-form" class="form-stack">
+                  <label>
+                    <span data-i18n="cabinet_admin_target">User ID</span>
+                    <input id="cabinet-admin-target-user" placeholder="13903713" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_role">Role</span>
+                    <select id="cabinet-admin-role">
+                      <option value="viewer">viewer</option>
+                      <option value="operator">operator</option>
+                      <option value="admin">admin</option>
+                      <option value="superadmin">superadmin</option>
+                    </select>
+                  </label>
+                  <div class="inline-actions">
+                    <button type="button" class="btn-primary" id="cabinet-admin-grant-btn" data-i18n="cabinet_admin_grant">Выдать роль</button>
+                    <button type="button" class="btn-secondary" id="cabinet-admin-revoke-btn" data-i18n="cabinet_admin_revoke">Снять роль</button>
+                  </div>
+                </form>
+              </article>
             </div>
           </section>
 

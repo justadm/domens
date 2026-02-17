@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     telegram_polling_enabled: bool = False
     telegram_polling_timeout_seconds: int = 25
     telegram_polling_allowed_updates: str = "message,callback_query"
+    telegram_admin_user_ids: str = ""
 
     postgres_dsn: str = "postgresql://domens:domens@localhost:5432/domens"
     redis_url: str = "redis://localhost:6379/0"
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
 
     registrar_provider: str = "timeweb"
     registrar_fallback_enabled: bool = True
+    registration_enabled: bool = False
+    registration_require_available_check: bool = True
     reg_ru_api_base_url: str = "https://api.reg.ru/api/regru2"
     reg_ru_username: str = ""
     reg_ru_password: str = ""
@@ -55,9 +58,12 @@ class Settings(BaseSettings):
     monitor_tlds: str = ".com,.io,.ai,.ru"
     monitor_seed_words: str = "agent,cloud,data,stack,flow,grid,lab,core"
     monitor_alert_min_score: float = 70.0
+    monitor_alert_statuses: str = "available,pending_delete"
+    monitor_require_provider_check: bool = True
     monitor_alert_cooldown_minutes: int = 180
     monitor_alert_per_target_run_limit: int = 5
     monitor_alert_per_target_daily_limit: int = 25
+    monitor_alert_global_run_limit: int = 12
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

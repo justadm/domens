@@ -78,6 +78,17 @@ make down
 4. При нажатии `Зарегистрировать` идет callback на backend.
 5. Backend автоматически подтверждает и сразу запускает регистрацию через API регистратора.
 
+## RBAC (MVP+)
+- В БД добавлены таблицы `roles`, `user_roles`.
+- Базовые роли: `viewer`, `operator`, `admin`, `superadmin`.
+- `TELEGRAM_ADMIN_USER_IDS` при старте синхронизируется в роль `admin` (backward compatibility).
+- Админ API:
+  - `GET /v1/admin/roles`
+  - `GET /v1/admin/users`
+  - `POST /v1/admin/grant`
+  - `POST /v1/admin/revoke`
+- Доступ к `/v1/admin/*`: только для пользователей с ролью `admin|superadmin` (или env admin fallback).
+
 ## Провайдеры
 - Регистратор: Timeweb (`TIMEWEB_API_*`), используется endpoint `POST /api/v1/add-domain/{fqdn}`.
 - Резервный регистратор: Reg.ru (`REG_RU_*`) в fallback-цепочке.
@@ -85,9 +96,17 @@ make down
 - DNS reserve: Selectel DNS Hosting (`SELECTEL_*`) через `ensure_zone` при fail основного регистратора.
 - Резервный канал уведомлений: MAX (`MAX_*`) + webhook `POST /v1/max/webhook`.
 
+### Защита от случайной покупки
+- `REGISTRATION_ENABLED=false` (по умолчанию) блокирует фактическую регистрацию во внешних API.
+- Для боевого режима вручную включается `REGISTRATION_ENABLED=true`.
+- `REGISTRATION_REQUIRE_AVAILABLE_CHECK=true` выполняет pre-check доступности у регистратора перед попыткой регистрации.
+
 ## Мониторинг доменов
 - Фоновый мониторинг включен по умолчанию (`MONITOR_ENABLED=true`).
 - Кандидаты строятся из `MONITOR_SEED_WORDS x MONITOR_TLDS`.
+- Фильтр алертов по статусам задается `MONITOR_ALERT_STATUSES` (рекомендуется `available,pending_delete`).
+- Строгая проверка через API провайдера: `MONITOR_REQUIRE_PROVIDER_CHECK=true` (без эвристических алертов).
+- Админ-копии алертов в Telegram: `TELEGRAM_ADMIN_USER_IDS` (список user_id через запятую).
 - Алерты отправляются в Telegram и/или MAX (если настроены chat id).
 - Ручной запуск цикла:
 ```bash

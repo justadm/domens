@@ -37,6 +37,19 @@ def _parse_csv(raw: str) -> list[str]:
     return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
 
+def _admin_user_ids() -> set[str]:
+    return {item for item in _parse_csv(settings.telegram_admin_user_ids)}
+
+
+def _is_admin_user(user_id: str) -> bool:
+    safe_uid = str(user_id).strip()
+    if not safe_uid:
+        return False
+    if safe_uid in _admin_user_ids():
+        return True
+    return store.has_any_role(safe_uid, ["admin", "superadmin"])
+
+
 def _short_rule(rule_id: str) -> str:
     return rule_id.split("-", 1)[0]
 
@@ -64,6 +77,54 @@ def _watch_rules_keyboard(rules: list[dict]) -> dict | None:
     if not keyboard:
         return None
     return {"inline_keyboard": keyboard}
+
+
+def _main_menu_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [{"text": "/profile"}, {"text": "/limits"}],
+            [{"text": "/watch list"}, {"text": "/watch seed"}],
+            [{"text": "/alerts on"}, {"text": "/alerts off"}],
+            [{"text": "/domains now ai tools"}],
+            [{"text": "/help"}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def _seed_watch_queries() -> list[str]:
+    return [
+        "ai tools",
+        "agent platform",
+        "agent cloud",
+        "mcp cloud",
+        "prompt stack",
+        "llm infra",
+        "inference api",
+        "voice ai",
+        "video ai",
+        "dev tools",
+        "no code ai",
+        "auto call",
+        "lead flow",
+        "crm ai",
+        "fintech ai",
+        "payment api",
+        "security ai",
+        "dns monitor",
+        "domain radar",
+        "domain catcher",
+        "drop catch",
+        "name scout",
+        "brand lab",
+        "growth stack",
+        "workflow ai",
+        "sales bot",
+        "support bot",
+        "code assist",
+        "data agent",
+        "cloud ops",
+    ]
 
 
 def _extract_message(payload: dict) -> tuple[str, str, str, str, str | None, str | None] | None:
@@ -128,7 +189,11 @@ async def _handle_start(chat_id: str, user_id: str, locale: str, username: str |
         )
         return {"ok": True, "action": "start_disclaimer_sent"}
 
-    await send_telegram_text(chat_id, "Вы уже зарегистрированы. Используйте /help для списка команд.")
+    await send_telegram_message(
+        chat_id,
+        "Вы уже зарегистрированы. Используйте /help для списка команд.",
+        reply_markup=_main_menu_keyboard(),
+    )
     return {"ok": True, "action": "start_existing_user"}
 
 
@@ -140,12 +205,14 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
         "/limits - лимиты алертов за 24ч\n"
         "/profile - профиль и статус\n"
         "/watch add <query> - добавить правило\n"
+        "/watch seed - добавить стартовый набор (30)\n"
         "/watch list - список правил\n"
         "/watch pause <id> - пауза правила\n"
         "/watch resume <id> - возобновить правило\n"
         "/watch delete <id> - удалить правило\n"
         "/alerts on|off - включить/выключить алерты\n"
-        "/domains now <query> - разовый подбор кандидатов"
+        "/domains now <query> - разовый подбор кандидатов\n"
+        "/menu - показать меню кнопок"
     )
     await send_telegram_text(chat_id, help_text)
     store.log_bot_event("command_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
@@ -202,6 +269,7 @@ async def _handle_profile(chat_id: str, user_id: str) -> dict:
     profile_text = (
         f"Профиль:\n"
         f"user_id: {user.telegram_user_id}\n"
+        f"role: {'admin' if _is_admin_user(user_id) else 'user'}\n"
         f"username: @{user.username or '-'}\n"
         f"chat_id: {user.telegram_chat_id or '-'}\n"
         f"disclaimer: {'accepted' if user.disclaimer_accepted_at else 'not accepted'}\n"
@@ -222,6 +290,30 @@ async def _handle_watch(chat_id: str, user_id: str, text: str) -> dict:
         return {"ok": True, "action": "watch_bad_format"}
 
     action = parts[1].lower()
+
+    if action == "seed":
+        existing = {str(item.get("query") or "").strip().lower() for item in store.list_watch_rules(user_id)}
+        added = 0
+        for query in _seed_watch_queries():
+            key = query.strip().lower()
+            if not key or key in existing:
+                continue
+            rule_id = store.add_watch_rule(user_id, watch_query=query)
+            if rule_id:
+                added += 1
+                existing.add(key)
+
+        await send_telegram_text(
+            chat_id,
+            f"Seed готов: добавлено {added} правил. Посмотреть: /watch list",
+        )
+        store.log_bot_event(
+            "watch_seed",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"added": added},
+        )
+        return {"ok": True, "action": "watch_seed_done", "added": added}
 
     if action == "add":
         query = " ".join(parts[2:]).strip() if len(parts) > 2 else ""
@@ -397,7 +489,11 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
         store.mark_disclaimer_accepted(user_id, settings.telegram_disclaimer_version)
         store.log_bot_event("disclaimer_accepted", telegram_user_id=user_id, telegram_chat_id=chat_id)
         if chat_id:
-            await send_telegram_text(chat_id, "Условия приняты. Теперь доступны команды: /help, /profile, /watch ...")
+            await send_telegram_message(
+                chat_id,
+                "Условия приняты. Теперь доступны команды: /help, /profile, /watch ...",
+                reply_markup=_main_menu_keyboard(),
+            )
         return {"ok": True, "action": "disclaimer_accepted"}
 
     if callback_data.startswith("watch:"):
@@ -501,6 +597,9 @@ async def process_telegram_update(payload: dict) -> dict:
         return await _handle_start(chat_id, user_id, locale, username, first_name)
     if text.startswith("/help"):
         return await _handle_help(chat_id, user_id)
+    if text.startswith("/menu"):
+        await send_telegram_message(chat_id, "Главное меню:", reply_markup=_main_menu_keyboard())
+        return {"ok": True, "action": "menu_sent"}
     if text.startswith("/limits"):
         return await _handle_limits(chat_id, user_id)
 

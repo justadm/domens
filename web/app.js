@@ -61,6 +61,13 @@ const I18N = {
     cabinet_resume: "Возобновить",
     cabinet_delete: "Удалить",
     cabinet_save: "Сохранить",
+    cabinet_admin: "Админ",
+    cabinet_admin_search: "Поиск пользователей",
+    cabinet_admin_limit: "Лимит",
+    cabinet_admin_target: "User ID",
+    cabinet_admin_role: "Роль",
+    cabinet_admin_grant: "Выдать роль",
+    cabinet_admin_revoke: "Снять роль",
   },
   en: {
     lang: "Language",
@@ -124,6 +131,13 @@ const I18N = {
     cabinet_resume: "Resume",
     cabinet_delete: "Delete",
     cabinet_save: "Save",
+    cabinet_admin: "Admin",
+    cabinet_admin_search: "Search users",
+    cabinet_admin_limit: "Limit",
+    cabinet_admin_target: "User ID",
+    cabinet_admin_role: "Role",
+    cabinet_admin_grant: "Grant role",
+    cabinet_admin_revoke: "Revoke role",
   },
 };
 
@@ -132,7 +146,7 @@ let currentTheme = localStorage.getItem("domens_theme") || "dark";
 let lastResults = [];
 let sortState = { key: "domain", dir: "asc" };
 let authState = { authenticated: false, user: null };
-let cabinetState = { profile: null, subscriptions: [], watchRules: [], history: [] };
+let cabinetState = { profile: null, subscriptions: [], watchRules: [], history: [], adminUsers: [], roles: [] };
 let cabinetRefreshTimer = null;
 
 async function api(path, options = {}) {
@@ -364,10 +378,12 @@ function setCabinetMessage(message) {
   const subsEl = document.getElementById("cabinet-subs");
   const watchEl = document.getElementById("cabinet-watch-list");
   const historyEl = document.getElementById("cabinet-history");
+  const adminEl = document.getElementById("cabinet-admin-users");
   if (profileEl) profileEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (subsEl) subsEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (watchEl) watchEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (historyEl) historyEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (adminEl) adminEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
 }
 
 function renderCabinetProfile(data) {
@@ -393,6 +409,8 @@ function renderCabinetProfile(data) {
     ["alerts_24h_sent", String(sentTotal)],
     ["alerts_24h_remaining_total", String(remainingTotal)],
     ["watch_rules_active", String(data.watch_rules_active || 0)],
+    ["is_admin", data.is_admin ? "true" : "false"],
+    ["roles", (data.roles || []).join(", ") || "-"],
   ];
   root.innerHTML = rows
     .map(
@@ -417,6 +435,49 @@ function renderCabinetProfile(data) {
   if (chatInput && data.chat_id) {
     chatInput.value = data.chat_id;
   }
+}
+
+function renderCabinetAdmin(users, roles) {
+  const root = document.getElementById("cabinet-admin-users");
+  const card = document.getElementById("cabinet-admin-card");
+  if (!root || !card) return;
+  const isAdmin = Boolean(authState?.user?.is_admin);
+  if (!isAdmin) {
+    card.classList.add("hidden");
+    root.innerHTML = "";
+    return;
+  }
+  card.classList.remove("hidden");
+
+  if (Array.isArray(roles) && roles.length) {
+    const select = document.getElementById("cabinet-admin-role");
+    if (select) {
+      select.innerHTML = roles
+        .map((role) => `<option value="${escapeHtml(role.code)}">${escapeHtml(role.code)}</option>`)
+        .join("");
+    }
+  }
+
+  if (!users || !users.length) {
+    root.innerHTML = `<p class="feed-empty">${I18N[currentLang].cabinet_empty}</p>`;
+    return;
+  }
+  root.innerHTML = users
+    .map(
+      (item) => `
+      <article class="list-row">
+        <div class="feed-row">
+          <strong>${escapeHtml(item.telegram_user_id)}</strong>
+          <span class="feed-status">${escapeHtml((item.roles || []).join(", ") || "no_roles")}</span>
+        </div>
+        <div class="feed-row">
+          <span>${escapeHtml(item.username ? `@${item.username}` : item.first_name || "-")}</span>
+          <time>${formatDate(item.updated_at)}</time>
+        </div>
+      </article>
+    `,
+    )
+    .join("");
 }
 
 function renderCabinetSubscriptions(items) {
@@ -534,22 +595,43 @@ async function refreshCabinet() {
     if (historySearch) historyParams.set("search", historySearch);
     const historyUrl = `/v1/cabinet/history?${historyParams.toString()}`;
 
+    const adminSearch = (document.getElementById("cabinet-admin-search")?.value || "").trim();
+    const adminLimitRaw = Number(document.getElementById("cabinet-admin-limit")?.value || 50);
+    const adminLimit = Number.isFinite(adminLimitRaw) ? Math.max(1, Math.min(200, adminLimitRaw)) : 50;
+
     const [profile, subs, watchRules, history] = await Promise.all([
       api("/v1/cabinet/profile"),
       api("/v1/cabinet/subscriptions"),
       api(watchUrl),
       api(historyUrl),
     ]);
+
+    let adminUsers = [];
+    let roles = [];
+    if (profile.is_admin) {
+      const usersParams = new URLSearchParams({ limit: String(adminLimit) });
+      if (adminSearch) usersParams.set("search", adminSearch);
+      const [usersResp, rolesResp] = await Promise.all([
+        api(`/v1/admin/users?${usersParams.toString()}`),
+        api("/v1/admin/roles"),
+      ]);
+      adminUsers = usersResp.items || [];
+      roles = rolesResp.items || [];
+    }
+
     cabinetState = {
       profile,
       subscriptions: subs.items || [],
       watchRules: watchRules.items || [],
       history: history.items || [],
+      adminUsers,
+      roles,
     };
     renderCabinetProfile(profile);
     renderCabinetSubscriptions(cabinetState.subscriptions);
     renderCabinetWatchRules(cabinetState.watchRules);
     renderCabinetHistory(cabinetState.history);
+    renderCabinetAdmin(cabinetState.adminUsers, cabinetState.roles);
   } catch (err) {
     setCabinetMessage(String(err));
   }
@@ -936,6 +1018,51 @@ document.getElementById("cabinet-watch-status-filter").addEventListener("change"
 
 document.getElementById("cabinet-history-apply-btn").addEventListener("click", () => {
   refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-refresh-btn").addEventListener("click", async () => {
+  await refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-search").addEventListener("input", () => {
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 300);
+});
+
+document.getElementById("cabinet-admin-limit").addEventListener("change", () => {
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-grant-btn").addEventListener("click", async () => {
+  try {
+    await api("/v1/admin/grant", {
+      method: "POST",
+      body: JSON.stringify({
+        telegram_user_id: document.getElementById("cabinet-admin-target-user").value.trim(),
+        role: document.getElementById("cabinet-admin-role").value,
+      }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
+});
+
+document.getElementById("cabinet-admin-revoke-btn").addEventListener("click", async () => {
+  try {
+    await api("/v1/admin/revoke", {
+      method: "POST",
+      body: JSON.stringify({
+        telegram_user_id: document.getElementById("cabinet-admin-target-user").value.trim(),
+        role: document.getElementById("cabinet-admin-role").value,
+      }),
+    });
+    await refreshCabinet();
+  } catch (err) {
+    setCabinetMessage(String(err));
+  }
 });
 
 applyTheme(currentTheme);

@@ -45,12 +45,37 @@ async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
     if not order:
         raise HTTPException(status_code=404, detail="order not found")
 
+    if not settings.registration_enabled:
+        return ExecuteRegistrationResponse(
+            order_id=order_id,
+            status="blocked",
+            registrar_response={
+                "result": "blocked_by_config",
+                "message": "Registration is disabled. Set REGISTRATION_ENABLED=true to enable.",
+                "domain": order.domain,
+            },
+        )
+
     if order.status in {"registered", "failed", "canceled"}:
         return ExecuteRegistrationResponse(
             order_id=order_id,
             status=order.status,
             registrar_response={"result": "already_terminal", "domain": order.domain},
         )
+
+    if settings.registration_require_available_check:
+        check = await registrar_client.check_availability(order.domain)
+        if not bool(check.get("available")):
+            store.set_order_status(order_id, "failed")
+            return ExecuteRegistrationResponse(
+                order_id=order_id,
+                status="failed",
+                registrar_response={
+                    "result": "precheck_unavailable",
+                    "domain": order.domain,
+                    "check": check,
+                },
+            )
 
     store.set_order_status(order_id, "sent_to_registrar")
     registrar_response = await registrar_client.register_domain(order.domain)
