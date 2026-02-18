@@ -12,6 +12,11 @@ Use only one Ollama runtime on server:
 
 Do not run both at the same time on `11434`, otherwise port and routing conflicts are expected.
 
+Before changing runtime mode, run preflight from ChatMarketAI ops:
+```bash
+./scripts/ollama_runtime_preflight.sh
+```
+
 ## Architecture
 - Shared service:
   - `ollama-shared` on host `127.0.0.1:11434`
@@ -42,7 +47,7 @@ In `/opt/domens/.env`:
 COPILOT_LLM_NLU_ENABLED=true
 COPILOT_LLM_PROVIDER=ollama
 COPILOT_LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
-COPILOT_LLM_OLLAMA_MODEL=qwen2.5:7b-instruct
+COPILOT_LLM_OLLAMA_MODEL=qwen2.5:0.5b
 COPILOT_LLM_CONFIDENCE_THRESHOLD=0.65
 ```
 
@@ -51,6 +56,14 @@ If API container cannot resolve `host.docker.internal` on Linux, use host gatewa
 
 Alternative (recommended if using dockerized Ollama):
 - place project containers and `ollama-shared` into one custom Docker network and call `http://ollama-shared:11434`.
+
+Alternative (when host bind is `0.0.0.0:11434` and firewall allows docker subnet):
+- detect project docker gateway IP and use `http://<gateway-ip>:11434`.
+- example:
+```bash
+DOCKER_GATEWAY_IP="$(docker network inspect domens_default -f '{{(index .IPAM.Config 0).Gateway}}')"
+echo "$DOCKER_GATEWAY_IP"
+```
 
 If `api` runs directly on host (not inside container), use:
 - `COPILOT_LLM_OLLAMA_BASE_URL=http://127.0.0.1:11434`.
@@ -68,7 +81,8 @@ For each project:
 - Keep fallback parser enabled.
 
 ## Capacity Notes
-- One 7B model is good for MVP and small traffic.
+- `qwen2.5:0.5b` is recommended for MVP on low RAM hosts.
+- `qwen2.5:7b-instruct` is recommended when RAM is 8+ GB (better quality for intent parsing).
 - Under load, queue requests on project side and cap timeout (`10-15s`).
 - If needed later:
   - move to stronger host,

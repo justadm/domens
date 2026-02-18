@@ -25,6 +25,11 @@ Choose one shared Ollama runtime on server:
 
 Do not run both on the same `11434` endpoint.
 
+Before switching mode, run runtime preflight from shared ops repo:
+```bash
+./scripts/ollama_runtime_preflight.sh
+```
+
 ## Supported intents
 - `create_watch`
 - `toggle_alerts`
@@ -42,7 +47,7 @@ COPILOT_LLM_PROVIDER=ollama
 COPILOT_LLM_TIMEOUT_SECONDS=12
 COPILOT_LLM_CONFIDENCE_THRESHOLD=0.65
 COPILOT_LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
-COPILOT_LLM_OLLAMA_MODEL=qwen2.5:7b-instruct
+COPILOT_LLM_OLLAMA_MODEL=qwen2.5:0.5b
 
 COPILOT_LLM_FALLBACK_ENABLED=false
 COPILOT_LLM_FALLBACK_BASE_URL=https://openrouter.ai/api/v1
@@ -52,13 +57,14 @@ COPILOT_LLM_FALLBACK_MODEL=qwen/qwen2.5-7b-instruct:free
 
 Endpoint notes:
 - API in Docker container -> `http://host.docker.internal:11434` (+ `extra_hosts: host-gateway`).
+- API in Docker container (gateway mode) -> `http://<docker-gateway-ip>:11434`.
 - API on host machine -> `http://127.0.0.1:11434`.
 - Same docker network with ollama container -> `http://ollama-shared:11434`.
 
 ## Quick local check
 1. Start Ollama and pull model:
 ```bash
-ollama pull qwen2.5:7b-instruct
+ollama pull qwen2.5:0.5b
 ```
 2. Enable `COPILOT_LLM_NLU_ENABLED=true` in `.env`.
 3. Restart API container/service.
@@ -71,3 +77,7 @@ Every Copilot message logs:
 - selected source (`llm` or fallback variant),
 - LLM provider/model/confidence metadata,
 - final intent/entities used for backend decision.
+
+## Model profile
+- Low RAM MVP: `qwen2.5:0.5b`.
+- Better intent quality (8+ GB RAM): `qwen2.5:7b-instruct`.

@@ -119,6 +119,7 @@ make down
   - `COPILOT_LLM_CONFIDENCE_THRESHOLD`
   - см. `docs/llm_nlu_runbook.md`
   - важно: использовать только один shared runtime Ollama на сервере (host/systemd или docker), см. `docs/shared_ollama_multi_project.md`
+  - профиль модели для MVP low-RAM: `qwen2.5:0.5b` (высокое качество: `qwen2.5:7b-instruct`)
 
 ## LK без авторизации (опционально)
 - Для быстрого входа в кабинет можно включить гостевой режим:
