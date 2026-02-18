@@ -188,6 +188,34 @@ Response:
 }
 ```
 
+## 8) Admin runtime
+
+### GET `/v1/admin/copilot-runtime`
+Admin-only runtime snapshot for Copilot/LLM status.
+
+Response `200`:
+```json
+{
+  "status": {
+    "llm_enabled": true,
+    "provider": "ollama",
+    "model": "qwen2.5:0.5b",
+    "fallback_enabled": false,
+    "fallback_model": "qwen/qwen2.5-7b-instruct:free",
+    "confidence_threshold": 0.65,
+    "rate_limit": {
+      "window_seconds": 60,
+      "requests": 12,
+      "tracked_users": 5
+    },
+    "degrade": {
+      "inflight_threshold": 4,
+      "current_inflight": 1
+    }
+  }
+}
+```
+
 ## Module boundaries
 - `collector -> checker`:
   - input: список доменов

@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     copilot_llm_fallback_base_url: str = "https://openrouter.ai/api/v1"
     copilot_llm_fallback_api_key: str = ""
     copilot_llm_fallback_model: str = "qwen/qwen2.5-7b-instruct:free"
+    copilot_rate_limit_window_seconds: int = 60
+    copilot_rate_limit_requests: int = 12
+    copilot_degrade_inflight_threshold: int = 4
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

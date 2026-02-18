@@ -61,6 +61,15 @@ Env flags:
 - `COPILOT_LLM_OLLAMA_BASE_URL`, `COPILOT_LLM_OLLAMA_MODEL` - local Ollama settings.
 - `COPILOT_LLM_FALLBACK_ENABLED` - enable provider fallback.
 - `COPILOT_LLM_FALLBACK_BASE_URL`, `COPILOT_LLM_FALLBACK_API_KEY`, `COPILOT_LLM_FALLBACK_MODEL` - fallback provider settings.
+- `COPILOT_RATE_LIMIT_WINDOW_SECONDS`, `COPILOT_RATE_LIMIT_REQUESTS` - overload protection per user.
+- `COPILOT_DEGRADE_INFLIGHT_THRESHOLD` - inflight threshold to switch into soft-degrade mode (template/rules-first).
+
+## Overload protection
+- Per-user rate-limit is applied to `POST /v1/copilot/message` (HTTP `429` on excess).
+- Under high inflight load Copilot switches to fast mode:
+  - intent parsing falls back to rules,
+  - conversational reply falls back to template.
+- Degrade mode is reflected in logs (`degrade_reason`) and admin runtime endpoint.
 
 ## Language handling
 - Response language is derived from stored user `locale` (`en*` -> English, otherwise Russian).

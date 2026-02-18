@@ -38,3 +38,22 @@ def test_admin_endpoint_allows_admin_session(monkeypatch) -> None:
     assert isinstance(data.get('items'), list)
     codes = {item.get('code') for item in data['items'] if isinstance(item, dict)}
     assert 'admin' in codes
+
+
+def test_admin_copilot_runtime(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+    monkeypatch.setattr(
+        admin_router,
+        "get_copilot_runtime_status",
+        lambda: {"llm_enabled": True, "provider": "ollama", "model": "qwen2.5:0.5b"},
+    )
+    response = client.get('/v1/admin/copilot-runtime')
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"]["provider"] == "ollama"

@@ -55,6 +55,9 @@ COPILOT_LLM_FALLBACK_ENABLED=false
 COPILOT_LLM_FALLBACK_BASE_URL=https://openrouter.ai/api/v1
 COPILOT_LLM_FALLBACK_API_KEY=
 COPILOT_LLM_FALLBACK_MODEL=qwen/qwen2.5-7b-instruct:free
+COPILOT_RATE_LIMIT_WINDOW_SECONDS=60
+COPILOT_RATE_LIMIT_REQUESTS=12
+COPILOT_DEGRADE_INFLIGHT_THRESHOLD=4
 ```
 
 Endpoint notes:
@@ -80,6 +83,17 @@ Every Copilot message logs:
 - LLM provider/model/confidence metadata,
 - final intent/entities used for backend decision.
 - conversational answer metadata (`reply_style`, `answer_source`, `context_used`, `trim_reason`).
+
+Admin runtime snapshot:
+- `GET /v1/admin/copilot-runtime`
+- includes `enabled/model/fallback`, rate-limit settings and current inflight/degrade counters.
+
+## Deploy smoke (after each push)
+1. `GET /health` -> `200`.
+2. `GET /v1/admin/copilot-runtime` (admin auth) -> verify model + limits.
+3. Send 1-2 normal Copilot requests -> `200`.
+4. Send burst above limit -> expect `429`.
+5. Check `copilot_events` for `message_received`, `assistant_reply`, and overload events (`rate_limited`, `degraded_mode` if triggered).
 
 ## Model profile
 - Low RAM MVP: `qwen2.5:0.5b`.

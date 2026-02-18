@@ -94,6 +94,7 @@ make down
   - `POST /v1/admin/grant`
   - `POST /v1/admin/revoke`
 - Доступ к `/v1/admin/*`: только для пользователей с ролью `admin|superadmin` (или env admin fallback).
+- Runtime status endpoint: `GET /v1/admin/copilot-runtime` (LLM mode, fallback, limits, inflight/degrade state).
 
 ## Copilot (MVP+)
 - Endpoints:

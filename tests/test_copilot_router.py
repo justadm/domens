@@ -12,6 +12,7 @@ from app.services.llm_nlu import LlmNluResult, LlmReplyResult
 
 
 def _mock_auth(monkeypatch) -> None:
+    copilot_router._reset_runtime_state_for_tests()
     monkeypatch.setattr(
         copilot_router,
         "get_authenticated_user",
@@ -21,6 +22,7 @@ def _mock_auth(monkeypatch) -> None:
 
 
 def test_copilot_message_requires_auth(monkeypatch) -> None:
+    copilot_router._reset_runtime_state_for_tests()
     monkeypatch.setattr(copilot_router, "get_authenticated_user", lambda _request: None)
     client = TestClient(app)
     response = client.post("/v1/copilot/message", json={"message": "hello", "mode": "chat"})
@@ -273,3 +275,20 @@ def test_copilot_chat_uses_llm_reply(monkeypatch) -> None:
     data = response.json()
     assert data["intent"] == "chat"
     assert "помочь" in data["reply"].lower()
+
+
+def test_copilot_rate_limit(monkeypatch) -> None:
+    _mock_auth(monkeypatch)
+    monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(copilot_router.store, "create_conversation", lambda *_args, **_kwargs: "conv-1")
+    monkeypatch.setattr(copilot_router.store, "log_conversation_message", lambda **_kwargs: "msg-1")
+    monkeypatch.setattr(copilot_router.store, "log_copilot_event", lambda **_kwargs: "evt-1")
+    monkeypatch.setattr(copilot_router.settings, "copilot_rate_limit_window_seconds", 60)
+    monkeypatch.setattr(copilot_router.settings, "copilot_rate_limit_requests", 1)
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_nlu_enabled", False)
+
+    client = TestClient(app)
+    first = client.post("/v1/copilot/message", json={"message": "привет", "mode": "chat"})
+    second = client.post("/v1/copilot/message", json={"message": "еще", "mode": "chat"})
+    assert first.status_code == 200
+    assert second.status_code == 429

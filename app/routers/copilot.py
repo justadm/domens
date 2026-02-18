@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
@@ -23,6 +25,72 @@ timeweb_client = TimewebApiClient(
 )
 
 DOMAIN_PATTERN = re.compile(r"\b[a-z0-9][a-z0-9-]{0,61}\.[a-z0-9.-]{2,24}\b", re.IGNORECASE)
+_RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+_INFLIGHT_REQUESTS = 0
+_INFLIGHT_LOCK = asyncio.Lock()
+
+
+async def _inc_inflight() -> int:
+    global _INFLIGHT_REQUESTS
+    async with _INFLIGHT_LOCK:
+        _INFLIGHT_REQUESTS += 1
+        return _INFLIGHT_REQUESTS
+
+
+async def _dec_inflight() -> int:
+    global _INFLIGHT_REQUESTS
+    async with _INFLIGHT_LOCK:
+        _INFLIGHT_REQUESTS = max(0, _INFLIGHT_REQUESTS - 1)
+        return _INFLIGHT_REQUESTS
+
+
+def _rate_limit_check(user_id: str) -> tuple[bool, int, int]:
+    now = time.monotonic()
+    safe_uid = str(user_id).strip() or "anon"
+    window = max(5, int(settings.copilot_rate_limit_window_seconds))
+    max_requests = max(1, int(settings.copilot_rate_limit_requests))
+    dq = _RATE_BUCKETS[safe_uid]
+    while dq and now - dq[0] > window:
+        dq.popleft()
+    if len(dq) >= max_requests:
+        retry_after = max(1, int(window - (now - dq[0])))
+        return False, 0, retry_after
+    dq.append(now)
+    remaining = max(0, max_requests - len(dq))
+    return True, remaining, 0
+
+
+def _llm_degrade_reason(inflight: int) -> str | None:
+    threshold = max(1, int(settings.copilot_degrade_inflight_threshold))
+    if inflight >= threshold:
+        return "high_inflight"
+    return None
+
+
+def get_copilot_runtime_status() -> dict:
+    return {
+        "llm_enabled": bool(settings.copilot_llm_nlu_enabled),
+        "provider": str(settings.copilot_llm_provider or "ollama"),
+        "model": str(settings.copilot_llm_ollama_model or ""),
+        "fallback_enabled": bool(settings.copilot_llm_fallback_enabled),
+        "fallback_model": str(settings.copilot_llm_fallback_model or ""),
+        "confidence_threshold": float(settings.copilot_llm_confidence_threshold),
+        "rate_limit": {
+            "window_seconds": int(settings.copilot_rate_limit_window_seconds),
+            "requests": int(settings.copilot_rate_limit_requests),
+            "tracked_users": len(_RATE_BUCKETS),
+        },
+        "degrade": {
+            "inflight_threshold": int(settings.copilot_degrade_inflight_threshold),
+            "current_inflight": _INFLIGHT_REQUESTS,
+        },
+    }
+
+
+def _reset_runtime_state_for_tests() -> None:
+    global _INFLIGHT_REQUESTS
+    _RATE_BUCKETS.clear()
+    _INFLIGHT_REQUESTS = 0
 
 
 class CopilotMessageRequest(BaseModel):
@@ -79,6 +147,8 @@ def _t(lang: str, key: str) -> str:
         "domain_suggest_header": "Подбор кандидатов:",
         "domain_suggest_mode_available_only": "Режим: только свободные/освобождающиеся.",
         "domain_suggest_mode_prioritized": "Режим: все с приоритетом по доступности.",
+        "rate_limited": "Слишком много запросов. Повторите через {retry_after} сек.",
+        "llm_degraded": "LLM-временнo отключен из-за нагрузки, использую быстрый режим.",
         "action_done": "Действие выполнено.",
         "action_canceled": "Действие отменено.",
         "token_expired": "Срок подтверждения истек.",
@@ -101,6 +171,8 @@ def _t(lang: str, key: str) -> str:
         "domain_suggest_header": "Candidate shortlist:",
         "domain_suggest_mode_available_only": "Mode: only free/releasing domains.",
         "domain_suggest_mode_prioritized": "Mode: all with availability priority.",
+        "rate_limited": "Too many requests. Retry in {retry_after} sec.",
+        "llm_degraded": "LLM temporarily disabled due to load; using fast mode.",
         "action_done": "Action executed.",
         "action_canceled": "Action canceled.",
         "token_expired": "Confirmation token has expired.",
@@ -432,6 +504,23 @@ async def process_copilot_message(
     if mode not in {"ask", "chat", "assistant"}:
         mode = "assistant"
 
+    allowed, _remaining, retry_after = _rate_limit_check(user_id)
+    if not allowed:
+        store.log_copilot_event(
+            event_type="rate_limited",
+            telegram_user_id=user_id,
+            conversation_id=None,
+            payload={
+                "retry_after": retry_after,
+                "window_seconds": int(settings.copilot_rate_limit_window_seconds),
+                "requests": int(settings.copilot_rate_limit_requests),
+            },
+        )
+        raise HTTPException(status_code=429, detail=_t(lang, "rate_limited").format(retry_after=retry_after))
+
+    inflight = await _inc_inflight()
+    degrade_reason = _llm_degrade_reason(inflight)
+
     conversation_id = str(conversation_id or "").strip()
     if conversation_id:
         conversation = store.get_conversation(conversation_id, telegram_user_id=user_id)
@@ -444,7 +533,8 @@ async def process_copilot_message(
     intent, confidence, entities = _detect_intent(message_text, mode)
     intent_source = "rules"
     llm_meta: dict = {}
-    if settings.copilot_llm_nlu_enabled:
+    llm_allowed = bool(settings.copilot_llm_nlu_enabled and not degrade_reason)
+    if llm_allowed:
         try:
             llm_result = await detect_intent_with_llm(message=message_text, mode=mode, lang=lang)
             if llm_result:
@@ -466,6 +556,15 @@ async def process_copilot_message(
         except Exception as exc:
             intent_source = "rules_llm_failed"
             llm_meta = {"error": str(exc)}
+    elif settings.copilot_llm_nlu_enabled and degrade_reason:
+        intent_source = "rules_degraded"
+        llm_meta = {"degrade_reason": degrade_reason}
+        store.log_copilot_event(
+            event_type="degraded_mode",
+            telegram_user_id=user_id,
+            conversation_id=conversation_id,
+            payload={"reason": degrade_reason, "inflight": inflight},
+        )
 
     store.log_conversation_message(
         conversation_id=conversation_id,
@@ -474,7 +573,13 @@ async def process_copilot_message(
         message_text=message_text,
         intent=intent,
         confidence=confidence,
-        raw_payload={"mode": mode, "channel": channel, "entities": entities, "intent_source": intent_source},
+        raw_payload={
+            "mode": mode,
+            "channel": channel,
+            "entities": entities,
+            "intent_source": intent_source,
+            "degrade_reason": degrade_reason,
+        },
     )
     store.log_copilot_event(
         event_type="message_received",
@@ -487,6 +592,8 @@ async def process_copilot_message(
             "entities": entities,
             "intent_source": intent_source,
             "llm": llm_meta,
+            "degrade_reason": degrade_reason,
+            "inflight": inflight,
         },
     )
 
@@ -502,6 +609,7 @@ async def process_copilot_message(
                 intent=intent,
                 confidence=confidence,
             )
+            await _dec_inflight()
             return CopilotMessageResponse(
                 conversation_id=conversation_id,
                 reply=reply,
@@ -527,6 +635,7 @@ async def process_copilot_message(
             intent=intent,
             confidence=confidence,
         )
+        await _dec_inflight()
         return CopilotMessageResponse(
             conversation_id=conversation_id,
             reply=reply,
@@ -547,6 +656,7 @@ async def process_copilot_message(
                 intent=intent,
                 confidence=confidence,
             )
+            await _dec_inflight()
             return CopilotMessageResponse(
                 conversation_id=conversation_id,
                 reply=reply,
@@ -606,6 +716,7 @@ async def process_copilot_message(
             confidence=confidence,
             raw_payload={"query": normalized_query, "tlds": tlds, "top": top, "suggest_mode": suggest_mode},
         )
+        await _dec_inflight()
         return CopilotMessageResponse(
             conversation_id=conversation_id,
             reply=reply,
@@ -624,6 +735,7 @@ async def process_copilot_message(
             ttl_minutes=5,
         )
         if not confirmation:
+            await _dec_inflight()
             raise HTTPException(status_code=500, detail="failed to prepare confirmation")
 
         reply = _assistant_text_for_intent_lang(intent, entities, lang)
@@ -643,6 +755,7 @@ async def process_copilot_message(
             confidence=confidence,
             raw_payload={"confirmation_token": confirmation["confirmation_token"], "action_type": action_type},
         )
+        await _dec_inflight()
         return CopilotMessageResponse(
             conversation_id=conversation_id,
             reply=reply,
@@ -658,7 +771,7 @@ async def process_copilot_message(
     answer_source = "template"
     context_used = 0
     trim_reason = None
-    if intent in {"help", "qa", "chat"} and settings.copilot_llm_nlu_enabled:
+    if intent in {"help", "qa", "chat"} and settings.copilot_llm_nlu_enabled and not degrade_reason:
         history_limit = max(2, int(settings.copilot_llm_chat_context_messages))
         history = store.list_conversation_messages(
             conversation_id=conversation_id,
@@ -683,6 +796,10 @@ async def process_copilot_message(
         except Exception as exc:
             answer_source = "template_llm_failed"
             trim_reason = str(exc)[:160]
+    elif degrade_reason:
+        answer_source = "template_degraded"
+        trim_reason = degrade_reason
+        reply = _t(lang, "llm_degraded") + "\n" + reply
 
     store.log_conversation_message(
         conversation_id=conversation_id,
@@ -710,8 +827,10 @@ async def process_copilot_message(
             "answer_source": answer_source,
             "context_used": context_used,
             "trim_reason": trim_reason,
+            "degrade_reason": degrade_reason,
         },
     )
+    await _dec_inflight()
     return CopilotMessageResponse(
         conversation_id=conversation_id,
         reply=reply,

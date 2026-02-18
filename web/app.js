@@ -72,6 +72,8 @@ const I18N = {
     cabinet_admin_access: "Аудит доступа",
     cabinet_admin_access_action: "Действие",
     cabinet_admin_access_limit: "Лимит",
+    cabinet_admin_copilot_runtime: "Copilot runtime",
+    cabinet_admin_copilot_runtime_refresh: "Обновить runtime",
     copilot_title: "Copilot",
     copilot_hint: "Свободный текст + подтверждение действий.",
     copilot_input: "Сообщение",
@@ -155,6 +157,8 @@ const I18N = {
     cabinet_admin_access: "Access Audit",
     cabinet_admin_access_action: "Action",
     cabinet_admin_access_limit: "Limit",
+    cabinet_admin_copilot_runtime: "Copilot runtime",
+    cabinet_admin_copilot_runtime_refresh: "Refresh runtime",
     copilot_title: "Copilot",
     copilot_hint: "Free-form text with explicit action confirmation.",
     copilot_input: "Message",
@@ -1231,6 +1235,17 @@ document.getElementById("cabinet-admin-access-action").addEventListener("input",
 
 document.getElementById("cabinet-admin-access-limit").addEventListener("change", () => {
   refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-copilot-runtime-btn").addEventListener("click", async () => {
+  const out = document.getElementById("cabinet-admin-copilot-runtime-output");
+  if (!out) return;
+  try {
+    const data = await api("/v1/admin/copilot-runtime");
+    put(out, data);
+  } catch (err) {
+    put(out, { error: String(err) });
+  }
 });
 
 document.getElementById("cabinet-admin-grant-btn").addEventListener("click", async () => {

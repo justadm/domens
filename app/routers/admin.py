@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
+from app.routers.copilot import get_copilot_runtime_status
 from app.state import store
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -31,6 +32,10 @@ class RoleAssignResponse(BaseModel):
     ok: bool
     telegram_user_id: str
     role: str
+
+
+class CopilotRuntimeResponse(BaseModel):
+    status: dict
 
 
 def _env_admin_ids() -> set[str]:
@@ -134,3 +139,9 @@ async def list_access_events(
             target_telegram_user_id=target_telegram_user_id,
         )
     )
+
+
+@router.get("/copilot-runtime", response_model=CopilotRuntimeResponse)
+async def copilot_runtime(request: Request) -> CopilotRuntimeResponse:
+    _require_admin(request)
+    return CopilotRuntimeResponse(status=get_copilot_runtime_status())
