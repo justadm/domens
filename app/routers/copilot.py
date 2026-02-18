@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 
@@ -73,6 +74,8 @@ def _t(lang: str, key: str) -> str:
         "register_domain_confirm": "Понял запрос на регистрацию: `{value}`. Подтвердите выполнение.",
         "request_received": "Запрос получен.",
         "domain_missing": "Не вижу домен в запросе. Пример: `проверь freebrand.com`.",
+        "domain_suggest_missing": "Уточните тематику. Пример: `подбери домен для fintech в зоне .ai,.ru`.",
+        "domain_suggest_header": "Подбор кандидатов:",
         "action_done": "Действие выполнено.",
         "action_canceled": "Действие отменено.",
         "token_expired": "Срок подтверждения истек.",
@@ -91,6 +94,8 @@ def _t(lang: str, key: str) -> str:
         "register_domain_confirm": "I understood this as registration request: `{value}`. Please confirm.",
         "request_received": "Request received.",
         "domain_missing": "No domain detected. Example: `check freebrand.com`.",
+        "domain_suggest_missing": "Please specify the topic. Example: `suggest domains for fintech in .ai,.ru`.",
+        "domain_suggest_header": "Candidate shortlist:",
         "action_done": "Action executed.",
         "action_canceled": "Action canceled.",
         "token_expired": "Confirmation token has expired.",
@@ -130,6 +135,105 @@ def _extract_watch_query(text: str) -> str:
     return compact[:120]
 
 
+def _extract_requested_tlds(text: str) -> list[str]:
+    found = [f".{match.group(1).lower()}" for match in re.finditer(r"(?:^|[\s,])\.([a-z]{2,10})\b", text.lower())]
+    unique: list[str] = []
+    for item in found:
+        if item not in unique:
+            unique.append(item)
+    return unique[:6]
+
+
+def _parse_tlds_from_settings(raw: str) -> list[str]:
+    return [item.strip().lower() for item in str(raw or "").split(",") if item.strip()]
+
+
+def _normalize_suggest_query(raw: str) -> str:
+    lowered = str(raw or "").lower()
+    aliases = [
+        ("искусствен", "ai"),
+        ("ии", "ai"),
+        ("финтех", "fintech"),
+        ("безопас", "security"),
+        ("агент", "agent"),
+        ("облак", "cloud"),
+        ("маркет", "market"),
+        ("дев", "dev"),
+    ]
+    for marker, value in aliases:
+        if marker in lowered:
+            return value
+
+    tokens = re.findall(r"[a-z0-9][a-z0-9-]{1,23}", lowered)
+    stop = {
+        "domain",
+        "domains",
+        "домен",
+        "доменов",
+        "подбери",
+        "подобрать",
+        "подбор",
+        "зона",
+        "zone",
+        "тематикой",
+        "тематикой",
+        "тематика",
+    }
+    for token in tokens:
+        if token not in stop:
+            cleaned = re.sub(r"[^a-z0-9-]+", "", token)
+            if len(cleaned) >= 2:
+                return cleaned[:24]
+    return ""
+
+
+def _suggest_query_terms(raw: str, normalized: str) -> list[str]:
+    terms = [item for item in re.findall(r"[a-z0-9]{2,24}", raw.lower()) if len(item) >= 2][:4]
+    if normalized and normalized not in terms:
+        terms.insert(0, normalized)
+    return terms[:4]
+
+
+def _domains_suggest_rank(item: dict, query_terms: list[str]) -> tuple:
+    status_weight = {"available": 100, "pending_delete": 90, "redemption": 75, "client_hold": 70, "registered": 20}
+    domain = str(item.get("domain") or "").lower()
+    name = domain.split(".", 1)[0]
+    base = float(item.get("score") or 0)
+    status_bonus = status_weight.get(str(item.get("status") or "registered"), 10)
+    term_bonus = 0
+    if query_terms:
+        hits = sum(1 for term in query_terms if term in name)
+        term_bonus = hits * 8
+        if name.startswith(query_terms[0]):
+            term_bonus += 5
+    length_penalty = max(0, len(name) - 11) * 1.5
+    final_score = base + status_bonus + term_bonus - length_penalty
+    return (-final_score, name)
+
+
+def _extract_suggest_query(raw: str) -> str:
+    compact = str(raw or "")
+    for marker in [
+        "подбери",
+        "подобрать",
+        "подбор",
+        "предложи",
+        "suggest",
+        "find",
+        "домен",
+        "доменов",
+        "домены",
+        "зона",
+        "zone",
+        "в зоне",
+        "for",
+        "для",
+    ]:
+        compact = re.sub(rf"\b{re.escape(marker)}\b", " ", compact, flags=re.IGNORECASE)
+    compact = re.sub(r"\s+", " ", compact).strip()
+    return compact[:120]
+
+
 def _detect_intent(text: str, mode: str) -> tuple[str, float, dict]:
     raw = str(text or "").strip()
     lowered = raw.lower()
@@ -153,6 +257,11 @@ def _detect_intent(text: str, mode: str) -> tuple[str, float, dict]:
     if any(word in lowered for word in ["watch", "следи", "монитор", "подписк"]) and mode in {"assistant", "ask"}:
         entities["query"] = _extract_watch_query(raw)
         return "create_watch", 0.88, entities
+
+    if any(word in lowered for word in ["подбери", "подобрать", "подбор", "предложи дом", "suggest domain", "find domain"]):
+        entities["query"] = _extract_suggest_query(raw)
+        entities["tlds"] = _extract_requested_tlds(raw)
+        return "domain_suggest", 0.86, entities
 
     if domain and any(word in lowered for word in ["проверь", "status", "свобод", "занят"]):
         return "domain_check", 0.87, entities
@@ -188,6 +297,8 @@ def _assistant_text_for_intent_lang(intent: str, entities: dict, lang: str) -> s
         return _t(lang, "chat")
     if intent == "domain_check":
         return _t(lang, "domain_check_start")
+    if intent == "domain_suggest":
+        return _t(lang, "domain_suggest_header")
     if intent == "create_watch":
         return _t(lang, "create_watch_confirm").format(value=entities.get("query"))
     if intent == "toggle_alerts":
@@ -300,6 +411,84 @@ async def process_copilot_message(
             message_text=reply,
             intent=intent,
             confidence=confidence,
+        )
+        return CopilotMessageResponse(
+            conversation_id=conversation_id,
+            reply=reply,
+            intent=intent,
+            confidence=confidence,
+        )
+
+    if intent == "domain_suggest":
+        raw_query = str(entities.get("query") or "").strip()
+        normalized_query = _normalize_suggest_query(raw_query or message_text)
+        if len(normalized_query) < 2:
+            reply = _t(lang, "domain_suggest_missing")
+            store.log_conversation_message(
+                conversation_id=conversation_id,
+                telegram_user_id=user_id,
+                direction="assistant",
+                message_text=reply,
+                intent=intent,
+                confidence=confidence,
+            )
+            return CopilotMessageResponse(
+                conversation_id=conversation_id,
+                reply=reply,
+                intent=intent,
+                confidence=confidence,
+            )
+
+        tlds = entities.get("tlds") or []
+        if not tlds:
+            tlds = _parse_tlds_from_settings(settings.monitor_tlds)[:6] or [".com", ".io", ".ai", ".ru"]
+
+        seeds = {
+            normalized_query,
+            f"{normalized_query}lab",
+            f"{normalized_query}hub",
+            f"{normalized_query}base",
+            f"go{normalized_query}",
+            f"{normalized_query}ai",
+        }
+        candidates = [f"{seed}{tld}" for seed in sorted(seeds) for tld in tlds][:24]
+        query_terms = _suggest_query_terms(raw_query or message_text, normalized_query)
+        sem = asyncio.Semaphore(8)
+
+        async def check_one(fqdn: str) -> dict:
+            async with sem:
+                status, eta = await infer_status(fqdn, timeweb_client=timeweb_client)
+                return {
+                    "domain": fqdn,
+                    "status": status,
+                    "score": score_domain(fqdn),
+                    "eta": eta.isoformat() if eta else None,
+                }
+
+        rows = await asyncio.gather(*(check_one(name) for name in candidates))
+        rows.sort(key=lambda item: _domains_suggest_rank(item, query_terms))
+        top = rows[:8]
+
+        lines = [
+            f"{item['domain']} | {item['status']} | score {item['score']}"
+            + (f" | eta {item['eta']}" if item["eta"] else "")
+            for item in top
+        ]
+        reply = _t(lang, "domain_suggest_header") + "\n" + "\n".join(lines)
+        store.log_copilot_event(
+            event_type="domain_suggest_result",
+            telegram_user_id=user_id,
+            conversation_id=conversation_id,
+            payload={"query": normalized_query, "tlds": tlds, "count": len(top)},
+        )
+        store.log_conversation_message(
+            conversation_id=conversation_id,
+            telegram_user_id=user_id,
+            direction="assistant",
+            message_text=reply,
+            intent=intent,
+            confidence=confidence,
+            raw_payload={"query": normalized_query, "tlds": tlds, "top": top},
         )
         return CopilotMessageResponse(
             conversation_id=conversation_id,

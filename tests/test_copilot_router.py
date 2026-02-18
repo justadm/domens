@@ -105,3 +105,29 @@ def test_copilot_confirm_executes_watch(monkeypatch) -> None:
     data = response.json()
     assert data["status"] == "executed"
     assert data["execution_result"]["rule_id"] == "rule-1"
+
+
+def test_copilot_domain_suggest(monkeypatch) -> None:
+    _mock_auth(monkeypatch)
+    monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(copilot_router.store, "create_conversation", lambda *_args, **_kwargs: "conv-1")
+    monkeypatch.setattr(copilot_router.store, "log_conversation_message", lambda **_kwargs: "msg-1")
+    monkeypatch.setattr(copilot_router.store, "log_copilot_event", lambda **_kwargs: "evt-1")
+
+    async def _fake_status(domain: str, **_kwargs):
+        if domain.endswith(".ru"):
+            return "available", None
+        return "registered", None
+
+    monkeypatch.setattr(copilot_router, "infer_status", _fake_status)
+    monkeypatch.setattr(copilot_router, "score_domain", lambda _domain: 77)
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/copilot/message",
+        json={"message": "подбери домен на ИИ-тематику в зоне .ru", "mode": "assistant"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["intent"] == "domain_suggest"
+    assert "candidate" in data["reply"].lower() or "подбор кандидатов" in data["reply"].lower()
