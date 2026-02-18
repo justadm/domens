@@ -39,7 +39,7 @@ Parity channels:
 - `toggle_alerts` -> on/off telegram alerts (requires confirm)
 - `register_domain` -> create+execute registration flow (requires confirm)
 - `domain_check` -> status check with provider inference (no confirm)
-- `domain_suggest` -> generate candidate names by topic+TLD and check status before reply (no confirm)
+- `domain_suggest` -> generate candidate names by topic+TLD, filter noisy names, prioritize actionable statuses (`available/pending_delete/redemption/client_hold`) before reply (no confirm)
 - `help|qa|chat` -> conversational answer (no confirm)
 
 ## Language handling

@@ -153,12 +153,21 @@ def _normalize_suggest_query(raw: str) -> str:
     aliases = [
         ("искусствен", "ai"),
         ("ии", "ai"),
+        ("ai", "ai"),
         ("финтех", "fintech"),
+        ("fintech", "fintech"),
         ("безопас", "security"),
+        ("security", "security"),
         ("агент", "agent"),
+        ("agent", "agent"),
         ("облак", "cloud"),
+        ("cloud", "cloud"),
         ("маркет", "market"),
+        ("market", "market"),
         ("дев", "dev"),
+        ("dev", "dev"),
+        ("crypto", "crypto"),
+        ("крипт", "crypto"),
     ]
     for marker, value in aliases:
         if marker in lowered:
@@ -176,8 +185,14 @@ def _normalize_suggest_query(raw: str) -> str:
         "зона",
         "zone",
         "тематикой",
-        "тематикой",
         "тематика",
+        "сфере",
+        "ниша",
+        "topic",
+        "под",
+        "на",
+        "и",
+        "в",
     }
     for token in tokens:
         if token not in stop:
@@ -209,6 +224,45 @@ def _domains_suggest_rank(item: dict, query_terms: list[str]) -> tuple:
     length_penalty = max(0, len(name) - 11) * 1.5
     final_score = base + status_bonus + term_bonus - length_penalty
     return (-final_score, name)
+
+
+def _is_noise_candidate(name: str, query: str) -> bool:
+    raw = str(name or "").lower()
+    if not raw or len(raw) < 3:
+        return True
+    if raw.startswith("-") or raw.endswith("-") or "--" in raw:
+        return True
+    if raw in {f"{query}ai", f"{query}{query}", f"go{query}{query}"}:
+        return True
+    if raw.count(query) > 1 and len(query) >= 3:
+        return True
+    unique_chars = len(set(raw))
+    if len(raw) >= 5 and unique_chars <= 2:
+        return True
+    return False
+
+
+def _build_suggest_seeds(normalized_query: str) -> list[str]:
+    if not normalized_query:
+        return []
+    base = normalized_query
+    seeds = [
+        base,
+        f"{base}hub",
+        f"{base}lab",
+        f"{base}base",
+        f"{base}flow",
+        f"{base}stack",
+        f"{base}core",
+        f"get{base}",
+        f"try{base}",
+        f"{base}now",
+    ]
+    unique: list[str] = []
+    for item in seeds:
+        if item not in unique and not _is_noise_candidate(item, base):
+            unique.append(item[:24])
+    return unique[:12]
 
 
 def _extract_suggest_query(raw: str) -> str:
@@ -443,15 +497,8 @@ async def process_copilot_message(
         if not tlds:
             tlds = _parse_tlds_from_settings(settings.monitor_tlds)[:6] or [".com", ".io", ".ai", ".ru"]
 
-        seeds = {
-            normalized_query,
-            f"{normalized_query}lab",
-            f"{normalized_query}hub",
-            f"{normalized_query}base",
-            f"go{normalized_query}",
-            f"{normalized_query}ai",
-        }
-        candidates = [f"{seed}{tld}" for seed in sorted(seeds) for tld in tlds][:24]
+        seeds = _build_suggest_seeds(normalized_query)
+        candidates = [f"{seed}{tld}" for seed in seeds for tld in tlds][:48]
         query_terms = _suggest_query_terms(raw_query or message_text, normalized_query)
         sem = asyncio.Semaphore(8)
 
@@ -466,8 +513,10 @@ async def process_copilot_message(
                 }
 
         rows = await asyncio.gather(*(check_one(name) for name in candidates))
-        rows.sort(key=lambda item: _domains_suggest_rank(item, query_terms))
-        top = rows[:8]
+        available_rows = [item for item in rows if str(item.get("status")) in {"available", "pending_delete", "redemption", "client_hold"}]
+        fallback_rows = rows if len(available_rows) < 8 else available_rows
+        fallback_rows.sort(key=lambda item: _domains_suggest_rank(item, query_terms))
+        top = fallback_rows[:8]
 
         lines = [
             f"{item['domain']} | {item['status']} | score {item['score']}"
