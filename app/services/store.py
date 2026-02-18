@@ -1834,6 +1834,86 @@ class PostgresStore:
                 "prev_offset": prev_offset,
             }
 
+    def get_admin_dashboard_stats(self) -> dict:
+        login_event_types = {"auth_telegram_login", "max_oauth_login"}
+        with self._session() as session:
+            users_total = int(session.execute(select(func.count()).select_from(TelegramUserModel)).scalar() or 0)
+            users_active = int(
+                session.execute(
+                    select(func.count()).select_from(TelegramUserModel).where(TelegramUserModel.is_active.is_(True))
+                ).scalar()
+                or 0
+            )
+            users_registered = int(
+                session.execute(
+                    select(func.count())
+                    .select_from(TelegramUserModel)
+                    .where(
+                        or_(
+                            TelegramUserModel.disclaimer_accepted_at.is_not(None),
+                            exists(
+                                select(BotEventModel.id)
+                                .where(BotEventModel.user_id == TelegramUserModel.id)
+                                .where(func.lower(BotEventModel.event_type).in_(login_event_types))
+                            ),
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
+            users_with_watch_rules = int(
+                session.execute(
+                    select(func.count(func.distinct(UserWatchRuleModel.user_id))).select_from(UserWatchRuleModel)
+                ).scalar()
+                or 0
+            )
+            watch_rules_total = int(session.execute(select(func.count()).select_from(UserWatchRuleModel)).scalar() or 0)
+            watch_rules_active = int(
+                session.execute(
+                    select(func.count()).select_from(UserWatchRuleModel).where(UserWatchRuleModel.status == "active")
+                ).scalar()
+                or 0
+            )
+            domains_total = int(session.execute(select(func.count()).select_from(DomainModel)).scalar() or 0)
+            alerts_total = int(session.execute(select(func.count()).select_from(AlertModel)).scalar() or 0)
+            registration_orders_total = int(session.execute(select(func.count()).select_from(RegistrationOrderModel)).scalar() or 0)
+            bot_events_total = int(session.execute(select(func.count()).select_from(BotEventModel)).scalar() or 0)
+            access_events_total = int(session.execute(select(func.count()).select_from(AccessEventModel)).scalar() or 0)
+            copilot_events_total = int(session.execute(select(func.count()).select_from(CopilotEventModel)).scalar() or 0)
+            conversations_total = int(session.execute(select(func.count()).select_from(ConversationModel)).scalar() or 0)
+
+            registration_status_rows = session.execute(
+                select(RegistrationOrderModel.status, func.count())
+                .group_by(RegistrationOrderModel.status)
+            ).all()
+            registration_by_status = {str(status.value if hasattr(status, "value") else status): int(count) for status, count in registration_status_rows}
+
+            # NOTE: shops/products are not part of this service schema yet.
+            return {
+                "users_total": users_total,
+                "users_registered": users_registered,
+                "users_active": users_active,
+                "users_with_watch_rules": users_with_watch_rules,
+                "watch_rules_total": watch_rules_total,
+                "watch_rules_active": watch_rules_active,
+                "domains_total": domains_total,
+                "alerts_total": alerts_total,
+                "registration_orders_total": registration_orders_total,
+                "registration_orders_by_status": registration_by_status,
+                "bot_events_total": bot_events_total,
+                "access_events_total": access_events_total,
+                "copilot_events_total": copilot_events_total,
+                "conversations_total": conversations_total,
+                "stores_total": None,
+                "products_total": None,
+                "ecommerce_orders_total": None,
+                "notes": {
+                    "stores_total": "not_available_in_this_service",
+                    "products_total": "not_available_in_this_service",
+                    "ecommerce_orders_total": "not_available_in_this_service",
+                },
+            }
+
     def create_conversation(self, telegram_user_id: str, channel: str = "web") -> str:
         safe_uid = str(telegram_user_id).strip()
         if not safe_uid:

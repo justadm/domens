@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -45,8 +45,8 @@ async def web_index() -> FileResponse:
 
 @app.get("/admin", include_in_schema=False)
 @app.get("/admin/", include_in_schema=False)
-async def web_admin_index() -> RedirectResponse:
-    return RedirectResponse(url="/?mode=admin#cabinet-section", status_code=307)
+async def web_admin_index() -> FileResponse:
+    return FileResponse(web_dir / "admin.html")
 
 
 @app.get("/health", response_model=HealthResponse)

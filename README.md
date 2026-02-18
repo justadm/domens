@@ -89,6 +89,7 @@ make down
 - Базовые роли: `viewer`, `operator`, `admin`, `superadmin`.
 - `TELEGRAM_ADMIN_USER_IDS` при старте синхронизируется в роль `admin` (backward compatibility).
 - Админ API:
+  - `GET /v1/admin/dashboard` (aggregated service stats for admin page)
   - `GET /v1/admin/roles`
   - `GET /v1/admin/users`
   - `GET /v1/admin/users-activity` (users, registration status, permissions/capabilities + filters/pagination)
@@ -98,6 +99,7 @@ make down
   - `POST /v1/admin/revoke`
 - Доступ к `/v1/admin/*`: по permission `admin.panel.read` (роль `admin|superadmin`, либо env admin fallback).
 - Runtime status endpoint: `GET /v1/admin/copilot-runtime` (LLM mode, fallback, limits, inflight/degrade state).
+- Separate admin web page: `/admin` (dedicated layout, not shared main SPA).
 - `GET /v1/auth/me` and `GET /v1/cabinet/profile` now return both:
   - `permissions[]` (effective permissions),
   - `capabilities{}` (UI-friendly flags, e.g. `admin_panel_read`, `copilot_register_domain`).

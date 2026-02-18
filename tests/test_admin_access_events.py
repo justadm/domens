@@ -161,3 +161,29 @@ def test_admin_bot_events_forwards_filters(monkeypatch) -> None:
     assert captured["query_text"] == "watch_add"
     assert captured["created_from"] is not None
     assert captured["created_to"] is not None
+
+
+def test_admin_dashboard_returns_stats(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+    monkeypatch.setattr(
+        admin_router.store,
+        "get_admin_dashboard_stats",
+        lambda: {
+            "users_total": 4,
+            "users_registered": 3,
+            "registration_orders_total": 11,
+            "stores_total": None,
+        },
+    )
+
+    response = client.get("/v1/admin/dashboard")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["stats"]["users_total"] == 4
+    assert data["stats"]["users_registered"] == 3

@@ -53,6 +53,10 @@ class AdminUsersActivityResponse(BaseModel):
     items: list[dict]
 
 
+class AdminDashboardResponse(BaseModel):
+    stats: dict
+
+
 class RoleAssignResponse(BaseModel):
     ok: bool
     telegram_user_id: str
@@ -106,6 +110,12 @@ async def list_roles(request: Request) -> AdminRolesResponse:
 async def list_users(request: Request, search: str | None = None, limit: int = 100) -> AdminUsersResponse:
     _require_admin(request)
     return AdminUsersResponse(items=store.list_users_with_roles(search=search, limit=limit))
+
+
+@router.get("/dashboard", response_model=AdminDashboardResponse)
+async def dashboard(request: Request) -> AdminDashboardResponse:
+    _require_admin(request)
+    return AdminDashboardResponse(stats=store.get_admin_dashboard_stats())
 
 
 @router.get("/users-activity", response_model=AdminUsersActivityResponse)
