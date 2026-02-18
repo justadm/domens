@@ -5,6 +5,13 @@ Updated: 2026-02-18
 ## Goal
 Run one Ollama instance and one model set on server, then connect multiple projects to it with isolated project-specific NLU connectors.
 
+## Conflict Prevention (important)
+Use only one Ollama runtime on server:
+1. Host/systemd Ollama (as in ChatMarketAI runbook), or
+2. Docker `ollama-shared` container.
+
+Do not run both at the same time on `11434`, otherwise port and routing conflicts are expected.
+
 ## Architecture
 - Shared service:
   - `ollama-shared` on host `127.0.0.1:11434`
@@ -25,6 +32,10 @@ docker exec -it ollama-shared ollama pull qwen2.5:7b-instruct
 docker exec -it ollama-shared ollama list
 ```
 
+If host/systemd Ollama is already used by other project:
+- skip container deployment above,
+- reuse existing host endpoint and keep one shared model store.
+
 ## Configure Domens project
 In `/opt/domens/.env`:
 ```env
@@ -38,8 +49,11 @@ COPILOT_LLM_CONFIDENCE_THRESHOLD=0.65
 If API container cannot resolve `host.docker.internal` on Linux, use host gateway:
 - add `extra_hosts: ["host.docker.internal:host-gateway"]` in project compose for API service.
 
-Alternative:
-- place project containers and `ollama-shared` into one custom Docker network and call `http://ollama:11434`.
+Alternative (recommended if using dockerized Ollama):
+- place project containers and `ollama-shared` into one custom Docker network and call `http://ollama-shared:11434`.
+
+If `api` runs directly on host (not inside container), use:
+- `COPILOT_LLM_OLLAMA_BASE_URL=http://127.0.0.1:11434`.
 
 ## Configure Other Projects
 For each project:
@@ -60,3 +74,9 @@ For each project:
   - move to stronger host,
   - pin dedicated model per critical project,
   - or run second Ollama instance for heavy workloads.
+
+## Recommended Single Runtime
+Given existing ChatMarketAI setup, preferred approach:
+1. Keep host/systemd Ollama as shared runtime.
+2. Point Domens and other projects to `http://host.docker.internal:11434` (from containers).
+3. Keep per-project connectors isolated in each codebase.

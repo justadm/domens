@@ -118,6 +118,7 @@ make down
   - `COPILOT_LLM_PROVIDER`
   - `COPILOT_LLM_CONFIDENCE_THRESHOLD`
   - см. `docs/llm_nlu_runbook.md`
+  - важно: использовать только один shared runtime Ollama на сервере (host/systemd или docker), см. `docs/shared_ollama_multi_project.md`
 
 ## LK без авторизации (опционально)
 - Для быстрого входа в кабинет можно включить гостевой режим:
