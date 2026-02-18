@@ -468,16 +468,28 @@ function setCabinetMessage(message) {
   const subsEl = document.getElementById("cabinet-subs");
   const watchEl = document.getElementById("cabinet-watch-list");
   const historyEl = document.getElementById("cabinet-history");
+  const watchPreview = document.getElementById("lk-watch-preview");
+  const historyPreview = document.getElementById("lk-history-preview");
   const adminEl = document.getElementById("cabinet-admin-users");
   const accessEl = document.getElementById("cabinet-admin-access-events");
   const accessPageInfo = document.getElementById("cabinet-admin-access-page-info");
+  const kpiWatch = document.getElementById("lk-kpi-watch-active");
+  const kpiChannels = document.getElementById("lk-kpi-alert-channels");
+  const kpiHistory = document.getElementById("lk-kpi-history-count");
+  const kpiOrders = document.getElementById("lk-kpi-registration-orders");
   if (profileEl) profileEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (subsEl) subsEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (watchEl) watchEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (historyEl) historyEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (watchPreview) watchPreview.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (historyPreview) historyPreview.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (adminEl) adminEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (accessEl) accessEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (accessPageInfo) accessPageInfo.textContent = "";
+  if (kpiWatch) kpiWatch.textContent = "0";
+  if (kpiChannels) kpiChannels.textContent = "0";
+  if (kpiHistory) kpiHistory.textContent = "0";
+  if (kpiOrders) kpiOrders.textContent = "0";
 }
 
 function setCopilotConfirmUI(token) {
@@ -887,6 +899,67 @@ function renderCabinetHistory(items) {
     .join("");
 }
 
+function renderLkDashboard(profile, subscriptions, watchRules, historyItems) {
+  const kpiWatch = document.getElementById("lk-kpi-watch-active");
+  const kpiChannels = document.getElementById("lk-kpi-alert-channels");
+  const kpiHistory = document.getElementById("lk-kpi-history-count");
+  const kpiOrders = document.getElementById("lk-kpi-registration-orders");
+  const watchPreview = document.getElementById("lk-watch-preview");
+  const historyPreview = document.getElementById("lk-history-preview");
+
+  const activeWatch = (watchRules || []).filter((r) => String(r.status || "").toLowerCase() === "active").length;
+  const enabledChannels = (subscriptions || []).filter((s) => String(s.status || "").toLowerCase() === "active").length;
+  const historyCount = Number((historyItems || []).length);
+  const registrationOrders = (historyItems || []).filter((item) =>
+    String(item.event_type || "").startsWith("registration_")
+  ).length;
+
+  if (kpiWatch) kpiWatch.textContent = String(activeWatch);
+  if (kpiChannels) kpiChannels.textContent = String(enabledChannels);
+  if (kpiHistory) kpiHistory.textContent = String(historyCount);
+  if (kpiOrders) kpiOrders.textContent = String(registrationOrders);
+
+  if (watchPreview) {
+    const rows = (watchRules || []).slice(0, 5);
+    watchPreview.innerHTML = rows.length
+      ? rows
+          .map(
+            (item) => `
+            <article class="list-row">
+              <div class="feed-row">
+                <strong>${escapeHtml(item.query || "-")}</strong>
+                <span class="feed-status">${escapeHtml(item.status || "-")}</span>
+              </div>
+              <div class="feed-row">
+                <span>${escapeHtml((item.tlds || []).join(", ") || "-")}</span>
+                <span>score >= ${escapeHtml(item.min_score ?? "-")}</span>
+              </div>
+            </article>
+          `,
+          )
+          .join("")
+      : `<p class="feed-empty">${I18N[currentLang].cabinet_empty}</p>`;
+  }
+
+  if (historyPreview) {
+    const rows = (historyItems || []).slice(0, 5);
+    historyPreview.innerHTML = rows.length
+      ? rows
+          .map(
+            (item) => `
+            <article class="list-row">
+              <div class="feed-row">
+                <strong>${escapeHtml(item.event_type || "-")}</strong>
+                <time>${formatDate(item.created_at)}</time>
+              </div>
+            </article>
+          `,
+          )
+          .join("")
+      : `<p class="feed-empty">${I18N[currentLang].cabinet_empty}</p>`;
+  }
+}
+
 async function refreshCabinet() {
   const dict = I18N[currentLang];
   if (!authState.authenticated || !authState.user) {
@@ -1007,6 +1080,7 @@ async function refreshCabinet() {
     renderCabinetSubscriptions(cabinetState.subscriptions);
     renderCabinetWatchRules(cabinetState.watchRules);
     renderCabinetHistory(cabinetState.history);
+    renderLkDashboard(cabinetState.profile, cabinetState.subscriptions, cabinetState.watchRules, cabinetState.history);
     renderCabinetAdmin(cabinetState.adminUsers, cabinetState.roles);
     renderCabinetAdminEvents(cabinetState.adminEvents);
     renderCabinetAccessEvents(cabinetState.accessAudit);

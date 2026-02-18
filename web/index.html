@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/web/styles.css" />
-    <link rel="stylesheet" href="/web/lk_shell.css?v=0.2.22" />
+    <link rel="stylesheet" href="/web/lk_shell.css?v=0.2.23" />
   </head>
   <body>
     <div class="app-shell">
@@ -80,8 +80,8 @@
       <div class="main-wrap">
         <header class="main-header panel" id="overview-section">
           <div>
-            <h1>Domain Intelligence</h1>
-            <p class="subtitle">Проверка доступности, алерты и регистрация в один поток.</p>
+            <h1>Личный кабинет</h1>
+            <p class="subtitle">Домены, watch-правила, алерты и заказы регистрации в одном интерфейсе.</p>
           </div>
 
           <div class="controls">
@@ -115,21 +115,55 @@
         <main class="layout">
           <section class="stats">
             <article class="stat panel">
-              <p data-i18n="metric_checked">Проверено</p>
+              <p data-i18n="metric_checked">Проверок сегодня</p>
               <h3 id="metric-checked">0</h3>
             </article>
             <article class="stat panel">
-              <p data-i18n="metric_available">Available</p>
+              <p data-i18n="metric_available">Доступны</p>
               <h3 id="metric-available">0</h3>
             </article>
             <article class="stat panel">
-              <p data-i18n="metric_pending">Pending Delete</p>
+              <p data-i18n="metric_pending">В drop-окне</p>
               <h3 id="metric-pending">0</h3>
             </article>
             <article class="stat panel">
-              <p data-i18n="metric_score">Средний Score</p>
+              <p data-i18n="metric_score">Средний score</p>
               <h3 id="metric-score">0</h3>
             </article>
+          </section>
+
+          <section class="panel lk-dashboard" id="lk-dashboard-section">
+            <div class="section-head">
+              <h2>Дашборд доменов</h2>
+            </div>
+            <div class="stats lk-stats">
+              <article class="stat panel">
+                <p>Активные watch-правила</p>
+                <h3 id="lk-kpi-watch-active">0</h3>
+              </article>
+              <article class="stat panel">
+                <p>Каналы алертов ON</p>
+                <h3 id="lk-kpi-alert-channels">0</h3>
+              </article>
+              <article class="stat panel">
+                <p>Событий в истории</p>
+                <h3 id="lk-kpi-history-count">0</h3>
+              </article>
+              <article class="stat panel">
+                <p>Заказов регистрации</p>
+                <h3 id="lk-kpi-registration-orders">0</h3>
+              </article>
+            </div>
+            <div class="lk-dashboard-grid">
+              <article class="cabinet-card">
+                <h3>Правила подбора (превью)</h3>
+                <div id="lk-watch-preview" class="list-box"></div>
+              </article>
+              <article class="cabinet-card">
+                <h3>Последние события (превью)</h3>
+                <div id="lk-history-preview" class="list-box"></div>
+              </article>
+            </div>
           </section>
 
           <section class="panel cabinet" id="cabinet-section">
@@ -453,6 +487,6 @@
       </div>
     </div>
 
-    <script src="/web/app.js"></script>
+    <script src="/web/app.js?v=0.2.23"></script>
   </body>
 </html>

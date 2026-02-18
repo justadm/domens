@@ -279,6 +279,7 @@ select {
 .stats { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .stat p { margin: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; }
 .stat h3 { margin: 7px 0 0; font-size: 24px; }
+.lk-dashboard-grid { margin-top: 10px; display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 h2 { margin: 0 0 10px; }
 .form-stack { display: grid; gap: 10px; }
@@ -382,6 +383,7 @@ th[data-sort]:hover { color: var(--accent); }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lk-dashboard-grid { grid-template-columns: 1fr; }
   .actions-grid { grid-template-columns: 1fr; }
   .cabinet-grid { grid-template-columns: 1fr; }
   .rule-edit-grid { grid-template-columns: 1fr; }
