@@ -75,6 +75,8 @@ const I18N = {
     copilot_title: "Copilot",
     copilot_hint: "Свободный текст + подтверждение действий.",
     copilot_input: "Сообщение",
+    copilot_send: "Отправить",
+    copilot_sending: "Отправка...",
     copilot_ask: "Задать вопрос",
     copilot_chat: "Просто поговорить",
     copilot_confirm: "Подтвердить действие",
@@ -156,6 +158,8 @@ const I18N = {
     copilot_title: "Copilot",
     copilot_hint: "Free-form text with explicit action confirmation.",
     copilot_input: "Message",
+    copilot_send: "Send",
+    copilot_sending: "Sending...",
     copilot_ask: "Ask a question",
     copilot_chat: "Just chat",
     copilot_confirm: "Confirm action",
@@ -180,6 +184,7 @@ let cabinetState = {
 let cabinetRefreshTimer = null;
 let copilotConversationId = "";
 let copilotPendingToken = "";
+let copilotSendInFlight = false;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -446,7 +451,18 @@ function renderCopilotOutput(payload) {
   out.textContent = JSON.stringify(payload, null, 2);
 }
 
-async function sendCopilot(mode) {
+function setCopilotSendButtonState(loading) {
+  const btn = document.getElementById("copilot-send-btn");
+  if (!btn) return;
+  const dict = I18N[currentLang];
+  btn.disabled = Boolean(loading);
+  btn.textContent = loading ? dict.copilot_sending : dict.copilot_send;
+}
+
+async function sendCopilot(mode = "assistant") {
+  if (copilotSendInFlight) {
+    return;
+  }
   if (!authState.authenticated || !authState.user) {
     renderCopilotOutput({
       error: I18N[currentLang].cabinet_login_required,
@@ -459,6 +475,8 @@ async function sendCopilot(mode) {
   const message = input.value.trim();
   if (!message) return;
 
+  copilotSendInFlight = true;
+  setCopilotSendButtonState(true);
   try {
     const data = await api("/v1/copilot/message", {
       method: "POST",
@@ -474,6 +492,9 @@ async function sendCopilot(mode) {
     setCopilotConfirmUI(data.requires_confirmation ? data.confirmation_token : "");
   } catch (err) {
     renderCopilotOutput({ error: String(err) });
+  } finally {
+    copilotSendInFlight = false;
+    setCopilotSendButtonState(false);
   }
 }
 
@@ -1242,12 +1263,8 @@ document.getElementById("cabinet-admin-revoke-btn").addEventListener("click", as
   }
 });
 
-document.getElementById("copilot-ask-btn").addEventListener("click", async () => {
+document.getElementById("copilot-send-btn").addEventListener("click", async () => {
   await sendCopilot("assistant");
-});
-
-document.getElementById("copilot-chat-btn").addEventListener("click", async () => {
-  await sendCopilot("chat");
 });
 
 document.getElementById("copilot-confirm-btn").addEventListener("click", async () => {
@@ -1264,6 +1281,7 @@ if (!localStorage.getItem("domens_lang_manual")) {
   if (browserLang) currentLang = browserLang;
 }
 applyLanguage(currentLang);
+setCopilotSendButtonState(false);
 setupMenu();
 setupSorting();
 initTelegramAuthWidget();
