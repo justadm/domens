@@ -627,6 +627,13 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
                 telegram_chat_id=chat_id,
                 payload={"target": target_uid, "role": role},
             )
+            store.log_access_event(
+                action="grant_role",
+                actor_telegram_user_id=user_id,
+                target_telegram_user_id=target_uid,
+                role_code=role,
+                payload={"source": "telegram"},
+            )
             await send_telegram_text(chat_id, f"Готово: выдана роль {role} пользователю {target_uid}.")
             return {"ok": True, "action": "admin_grant_done"}
 
@@ -639,6 +646,13 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
             telegram_user_id=user_id,
             telegram_chat_id=chat_id,
             payload={"target": target_uid, "role": role},
+        )
+        store.log_access_event(
+            action="revoke_role",
+            actor_telegram_user_id=user_id,
+            target_telegram_user_id=target_uid,
+            role_code=role,
+            payload={"source": "telegram"},
         )
         await send_telegram_text(chat_id, f"Готово: роль {role} отозвана у пользователя {target_uid}.")
         return {"ok": True, "action": "admin_revoke_done"}

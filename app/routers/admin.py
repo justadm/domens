@@ -23,6 +23,10 @@ class AdminRolesResponse(BaseModel):
     items: list[dict]
 
 
+class AdminAccessEventsResponse(BaseModel):
+    items: list[dict]
+
+
 class RoleAssignResponse(BaseModel):
     ok: bool
     telegram_user_id: str
@@ -78,6 +82,13 @@ async def grant_role(payload: RoleAssignRequest, request: Request) -> RoleAssign
         telegram_user_id=admin.telegram_user_id,
         payload={"target": uid, "role": role},
     )
+    store.log_access_event(
+        action="grant_role",
+        actor_telegram_user_id=admin.telegram_user_id,
+        target_telegram_user_id=uid,
+        role_code=role,
+        payload={"source": "api"},
+    )
     return RoleAssignResponse(ok=True, telegram_user_id=uid, role=role)
 
 
@@ -96,4 +107,30 @@ async def revoke_role(payload: RoleAssignRequest, request: Request) -> RoleAssig
         telegram_user_id=admin.telegram_user_id,
         payload={"target": uid, "role": role},
     )
+    store.log_access_event(
+        action="revoke_role",
+        actor_telegram_user_id=admin.telegram_user_id,
+        target_telegram_user_id=uid,
+        role_code=role,
+        payload={"source": "api"},
+    )
     return RoleAssignResponse(ok=True, telegram_user_id=uid, role=role)
+
+
+@router.get("/access-events", response_model=AdminAccessEventsResponse)
+async def list_access_events(
+    request: Request,
+    limit: int = 100,
+    action: str | None = None,
+    actor_telegram_user_id: str | None = None,
+    target_telegram_user_id: str | None = None,
+) -> AdminAccessEventsResponse:
+    _require_admin(request)
+    return AdminAccessEventsResponse(
+        items=store.list_access_events(
+            limit=limit,
+            action=action,
+            actor_telegram_user_id=actor_telegram_user_id,
+            target_telegram_user_id=target_telegram_user_id,
+        )
+    )

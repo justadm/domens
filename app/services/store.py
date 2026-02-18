@@ -18,7 +18,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column, relationship, sessionmaker
+from sqlalchemy.orm import Mapped, Session, aliased, declarative_base, mapped_column, relationship, sessionmaker
 
 
 Base = declarative_base()
@@ -232,6 +232,24 @@ class BotEventModel(Base):
     )
     telegram_chat_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AccessEventModel(Base):
+    __tablename__ = "access_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("telegram_users.id"), nullable=True
+    )
+    target_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("telegram_users.id"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    role_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -1302,3 +1320,95 @@ class PostgresStore:
             ]
 
         return filtered[: max(1, min(limit, 200))]
+
+    def log_access_event(
+        self,
+        action: str,
+        actor_telegram_user_id: str | None = None,
+        target_telegram_user_id: str | None = None,
+        role_code: str | None = None,
+        payload: dict | None = None,
+    ) -> None:
+        safe_action = str(action).strip()
+        if not safe_action:
+            return
+
+        with self._session() as session:
+            actor_user_id = None
+            target_user_id = None
+
+            if actor_telegram_user_id:
+                actor_user = session.execute(
+                    select(TelegramUserModel)
+                    .where(TelegramUserModel.telegram_user_id == str(actor_telegram_user_id).strip())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if actor_user:
+                    actor_user_id = actor_user.id
+
+            if target_telegram_user_id:
+                target_user = session.execute(
+                    select(TelegramUserModel)
+                    .where(TelegramUserModel.telegram_user_id == str(target_telegram_user_id).strip())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if target_user:
+                    target_user_id = target_user.id
+
+            session.add(
+                AccessEventModel(
+                    actor_user_id=actor_user_id,
+                    target_user_id=target_user_id,
+                    action=safe_action,
+                    role_code=str(role_code).strip().lower() if role_code else None,
+                    payload=payload or {},
+                )
+            )
+            session.commit()
+
+    def list_access_events(
+        self,
+        limit: int = 100,
+        action: str | None = None,
+        actor_telegram_user_id: str | None = None,
+        target_telegram_user_id: str | None = None,
+    ) -> list[dict]:
+        safe_limit = max(1, min(int(limit), 300))
+        target_action = (action or "").strip().lower()
+        actor_uid = (actor_telegram_user_id or "").strip()
+        target_uid = (target_telegram_user_id or "").strip()
+
+        with self._session() as session:
+            actor_user = aliased(TelegramUserModel)
+            target_user = aliased(TelegramUserModel)
+
+            query = (
+                select(AccessEventModel, actor_user.telegram_user_id, target_user.telegram_user_id)
+                .outerjoin(actor_user, actor_user.id == AccessEventModel.actor_user_id)
+                .outerjoin(target_user, target_user.id == AccessEventModel.target_user_id)
+                .order_by(desc(AccessEventModel.created_at))
+                .limit(safe_limit)
+            )
+            rows = session.execute(query).all()
+
+            items: list[dict] = []
+            for event, actor_uid_row, target_uid_row in rows:
+                item = {
+                    "id": str(event.id),
+                    "action": event.action,
+                    "role_code": event.role_code,
+                    "actor_telegram_user_id": actor_uid_row,
+                    "target_telegram_user_id": target_uid_row,
+                    "payload": event.payload or {},
+                    "created_at": event.created_at.isoformat(),
+                }
+                items.append(item)
+
+            if target_action:
+                items = [item for item in items if str(item.get("action", "")).strip().lower() == target_action]
+            if actor_uid:
+                items = [item for item in items if str(item.get("actor_telegram_user_id", "")).strip() == actor_uid]
+            if target_uid:
+                items = [item for item in items if str(item.get("target_telegram_user_id", "")).strip() == target_uid]
+
+            return items[:safe_limit]

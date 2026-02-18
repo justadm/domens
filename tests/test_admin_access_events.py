@@ -10,13 +10,13 @@ from app.routers import admin as admin_router
 from app.routers.auth import AuthUserResponse
 
 
-def test_admin_endpoint_requires_auth() -> None:
+def test_admin_access_events_requires_auth() -> None:
     client = TestClient(app)
-    response = client.get('/v1/admin/roles')
+    response = client.get("/v1/admin/access-events")
     assert response.status_code == 401
 
 
-def test_admin_endpoint_allows_admin_session(monkeypatch) -> None:
+def test_admin_access_events_returns_items(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
@@ -24,17 +24,25 @@ def test_admin_endpoint_allows_admin_session(monkeypatch) -> None:
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+
     monkeypatch.setattr(
         admin_router.store,
-        "list_roles",
-        lambda: [
-            {"id": "1", "code": "admin", "title": "Admin", "created_at": "2026-02-18T00:00:00+00:00"},
-            {"id": "2", "code": "viewer", "title": "Viewer", "created_at": "2026-02-18T00:00:00+00:00"},
+        "list_access_events",
+        lambda **kwargs: [
+            {
+                "id": "evt-1",
+                "action": "grant_role",
+                "role_code": "operator",
+                "actor_telegram_user_id": "13903713",
+                "target_telegram_user_id": "111",
+                "payload": {"source": "api"},
+                "created_at": "2026-02-18T00:00:00+00:00",
+            }
         ],
     )
-    response = client.get('/v1/admin/roles')
+
+    response = client.get("/v1/admin/access-events?limit=10")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data.get('items'), list)
-    codes = {item.get('code') for item in data['items'] if isinstance(item, dict)}
-    assert 'admin' in codes
+    assert isinstance(data.get("items"), list)
+    assert data["items"][0]["action"] == "grant_role"

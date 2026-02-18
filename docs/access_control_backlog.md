@@ -6,15 +6,14 @@
 - Monitoring sends admin copy of alerts to configured admin Telegram users.
 - Cabinet/API expose admin-only operations for role management.
 - Telegram bot supports admin commands: `/admin roles|users|grant|revoke`.
+- Audit trail for role operations is persisted in `access_events`.
 
 ## Remaining gaps
 - Fine-grained permissions matrix is not implemented yet (`permissions`, `role_permissions`).
-- No separate `access_events` table for explicit audit trail (partial audit only in `bot_events`).
 
 ## Planned DB extensions
 1. Add table `permissions`.
 2. Add table `role_permissions`.
-3. Add audit table `access_events` (who granted/revoked role).
 
 ## Planned API/commands
 - `/admin users` - list admins/operators.
