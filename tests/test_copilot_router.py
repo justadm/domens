@@ -277,6 +277,43 @@ def test_copilot_falls_back_when_llm_confidence_low(monkeypatch) -> None:
     assert data["requires_confirmation"] is True
 
 
+def test_copilot_blocks_high_conflicting_llm_intent_for_strong_rule(monkeypatch) -> None:
+    _mock_auth(monkeypatch)
+    monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(copilot_router.store, "create_conversation", lambda *_args, **_kwargs: "conv-1")
+    monkeypatch.setattr(copilot_router.store, "log_conversation_message", lambda **_kwargs: "msg-1")
+    monkeypatch.setattr(copilot_router.store, "log_copilot_event", lambda **_kwargs: "evt-1")
+    monkeypatch.setattr(
+        copilot_router.store,
+        "create_copilot_confirmation",
+        lambda **_kwargs: {
+            "confirmation_token": "cp_test_guard",
+            "action_type": "create_watch",
+            "action_payload": {"query": "ai tools", "tlds": [".ai"]},
+        },
+    )
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_nlu_enabled", True)
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_confidence_threshold", 0.60)
+
+    async def _fake_llm(**_kwargs):
+        return LlmNluResult(
+            intent="domain_check",
+            confidence=0.99,
+            entities={"domain": "wrong.com"},
+            provider="ollama",
+            model="qwen2.5:0.5b",
+        )
+
+    monkeypatch.setattr(copilot_router, "detect_intent_with_llm", _fake_llm)
+
+    client = TestClient(app)
+    response = client.post("/v1/copilot/message", json={"message": "добавь watch для ai tools", "mode": "assistant"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["intent"] == "create_watch"
+    assert data["requires_confirmation"] is True
+
+
 def test_copilot_chat_uses_llm_reply(monkeypatch) -> None:
     _mock_auth(monkeypatch)
     monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)

@@ -29,6 +29,7 @@ _RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 _INFLIGHT_REQUESTS = 0
 _INFLIGHT_LOCK = asyncio.Lock()
 _LLM_SEMAPHORE = asyncio.Semaphore(max(1, int(settings.copilot_llm_max_parallel)))
+_RULE_STRONG_INTENTS = {"create_watch", "toggle_alerts", "register_domain", "domain_check", "domain_suggest"}
 
 
 async def _inc_inflight() -> int:
@@ -583,10 +584,19 @@ async def process_copilot_message(
                     "confidence": llm_result.confidence,
                 }
                 if llm_result.confidence >= float(settings.copilot_llm_confidence_threshold):
-                    intent = llm_result.intent
-                    confidence = llm_result.confidence
-                    entities = llm_result.entities or {}
-                    intent_source = "llm"
+                    rules_intent = str(intent)
+                    llm_intent = str(llm_result.intent)
+                    allow_override = (rules_intent in {"chat", "qa", "help"}) or (llm_intent == rules_intent)
+                    if allow_override:
+                        intent = llm_intent
+                        confidence = llm_result.confidence
+                        entities = llm_result.entities or {}
+                        intent_source = "llm"
+                    elif rules_intent in _RULE_STRONG_INTENTS:
+                        intent_source = "rules_guarded_override_blocked"
+                        llm_meta["override_blocked"] = True
+                    else:
+                        intent_source = "rules_llm_conflict"
                 else:
                     intent_source = "rules_llm_low_confidence"
             else:
