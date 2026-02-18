@@ -52,6 +52,9 @@ class Settings(BaseSettings):
 
     auth_jwt_secret: str = "change_me"
     auth_jwt_ttl_seconds: int = 604800
+    web_guest_auth_enabled: bool = False
+    web_guest_user_id: str = ""
+    web_guest_is_admin: bool = False
 
     monitor_enabled: bool = True
     monitor_interval_seconds: int = 300

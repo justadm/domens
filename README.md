@@ -105,6 +105,14 @@ make down
   - `copilot_action_confirmations`
   - `copilot_events`
 
+## LK без авторизации (опционально)
+- Для быстрого входа в кабинет можно включить гостевой режим:
+  - `WEB_GUEST_AUTH_ENABLED=true`
+  - `WEB_GUEST_USER_ID=<telegram_user_id>`
+  - `WEB_GUEST_IS_ADMIN=true|false`
+- В этом режиме `/v1/auth/me` возвращает guest-пользователя даже без cookie-сессии.
+- В левом меню добавлен пункт `LK` (быстрый переход в кабинет).
+
 ## Провайдеры
 - Регистратор: Timeweb (`TIMEWEB_API_*`), используется endpoint `POST /api/v1/add-domain/{fqdn}`.
 - Резервный регистратор: Reg.ru (`REG_RU_*`) в fallback-цепочке.

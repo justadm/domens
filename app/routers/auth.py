@@ -183,6 +183,38 @@ def _get_current_user(request: Request) -> AuthUserResponse | None:
     )
 
 
+def _get_guest_user() -> AuthUserResponse | None:
+    if not settings.web_guest_auth_enabled:
+        return None
+    guest_uid = str(settings.web_guest_user_id or "").strip()
+    if not guest_uid:
+        return None
+
+    user = store.upsert_telegram_user(
+        telegram_user_id=guest_uid,
+        telegram_chat_id=None,
+        username=None,
+        first_name="LK Guest",
+        locale="ru",
+    )
+    roles = store.list_user_role_codes(user.telegram_user_id)
+    if settings.web_guest_is_admin:
+        if "admin" not in roles and "superadmin" not in roles:
+            store.grant_role(user.telegram_user_id, "admin", granted_by="web_guest_auth")
+            roles = store.list_user_role_codes(user.telegram_user_id)
+
+    env_admins = {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
+    is_admin = settings.web_guest_is_admin or "admin" in roles or "superadmin" in roles or user.telegram_user_id in env_admins
+    return AuthUserResponse(
+        telegram_user_id=user.telegram_user_id,
+        username=user.username,
+        first_name=user.first_name,
+        locale=user.locale,
+        roles=roles,
+        is_admin=is_admin,
+    )
+
+
 def _is_max_oauth_configured() -> bool:
     return bool(
         settings.max_oauth_enabled
@@ -202,7 +234,10 @@ def _cleanup_max_states(now_ts: int) -> None:
 
 
 def get_authenticated_user(request: Request) -> AuthUserResponse | None:
-    return _get_current_user(request)
+    user = _get_current_user(request)
+    if user:
+        return user
+    return _get_guest_user()
 
 
 @router.get("/telegram/widget-config", response_model=TelegramWidgetConfigResponse)
@@ -358,7 +393,7 @@ async def max_oauth_callback(
 
 @router.get("/me", response_model=AuthSessionResponse)
 async def auth_me(request: Request) -> AuthSessionResponse:
-    user = _get_current_user(request)
+    user = get_authenticated_user(request)
     if not user:
         return AuthSessionResponse(authenticated=False)
     return AuthSessionResponse(authenticated=True, user=user)
