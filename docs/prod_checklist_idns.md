@@ -38,12 +38,16 @@ Required values in `/opt/domens/.env`:
 - `MONITOR_REQUIRE_PROVIDER_CHECK=true`
 - `TELEGRAM_ADMIN_USER_IDS=13903713`
 
-## 4) First run
+## 4) First run (nginx mode on msk)
 ```bash
-cd /opt/domens
-docker compose -f deploy/docker-compose.prod.yml up -d --build
-docker compose -f deploy/docker-compose.prod.yml ps
+cd /opt/domens/deploy
+sudo -n docker compose -p domens -f docker-compose.nginx.yml up -d --build
+sudo -n docker compose -p domens -f docker-compose.nginx.yml ps
 ```
+
+Why not `docker-compose.prod.yml`:
+- `80/443` are already occupied by host nginx on `msk`;
+- use host nginx vhost `idns.devee.ru` -> `127.0.0.1:28080`.
 
 ## 5) Telegram domain + webhook
 In BotFather:

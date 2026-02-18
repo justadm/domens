@@ -41,6 +41,7 @@ docker compose up --build -d
 - Web UI: http://127.0.0.1:8080/
 
 ## Прод: VPS + поддомен + автодеплой из GitHub
+- Nginx mode (for busy servers with shared 80/443): `deploy/docker-compose.nginx.yml`
 - Прод compose: `deploy/docker-compose.prod.yml`
 - Reverse proxy/HTTPS: `deploy/Caddyfile`
 - Deploy script на сервере: `scripts/deploy_prod.sh`
