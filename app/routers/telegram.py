@@ -232,6 +232,14 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
         "/domains now <query> - разовый подбор кандидатов\n"
         "/menu - показать меню кнопок"
     )
+    if _is_admin_user(user_id):
+        help_text += (
+            "\n\nАдмин-команды:\n"
+            "/admin roles - список ролей\n"
+            "/admin users [search] - пользователи и роли\n"
+            "/admin grant <telegram_user_id> <role>\n"
+            "/admin revoke <telegram_user_id> <role>"
+        )
     await send_telegram_text(chat_id, help_text)
     store.log_bot_event("command_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "help_sent"}
@@ -552,6 +560,93 @@ async def _handle_domains_now(chat_id: str, user_id: str, text: str) -> dict:
     return {"ok": True, "action": "domains_now_done", "count": len(top)}
 
 
+async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
+    if not _is_admin_user(user_id):
+        await send_telegram_text(chat_id, "Недостаточно прав. Команда доступна только admin/superadmin.")
+        return {"ok": True, "action": "admin_forbidden"}
+
+    parts = text.split(maxsplit=3)
+    if len(parts) < 2:
+        await send_telegram_text(chat_id, "Формат: /admin roles|users|grant|revoke ...")
+        return {"ok": True, "action": "admin_bad_format"}
+
+    action = parts[1].strip().lower()
+
+    if action == "roles":
+        roles = store.list_roles()
+        lines = ["Роли:"]
+        for item in roles:
+            lines.append(f"- {item.get('code')} ({item.get('title')})")
+        await send_telegram_text(chat_id, "\n".join(lines))
+        store.log_bot_event("admin_roles", telegram_user_id=user_id, telegram_chat_id=chat_id)
+        return {"ok": True, "action": "admin_roles", "count": len(roles)}
+
+    if action == "users":
+        search = parts[2].strip() if len(parts) >= 3 else None
+        rows = store.list_users_with_roles(search=search, limit=20)
+        if not rows:
+            await send_telegram_text(chat_id, "Пользователи не найдены.")
+            return {"ok": True, "action": "admin_users_empty"}
+
+        lines = ["Пользователи (до 20):"]
+        for row in rows:
+            uid = str(row.get("telegram_user_id") or "-")
+            username = str(row.get("username") or "-")
+            roles = row.get("roles") or []
+            roles_text = ",".join(roles) if roles else "no-role"
+            lines.append(f"- {uid} | @{username} | {roles_text}")
+        await send_telegram_text(chat_id, "\n".join(lines))
+        store.log_bot_event(
+            "admin_users",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"search": search or ""},
+        )
+        return {"ok": True, "action": "admin_users", "count": len(rows)}
+
+    if action in {"grant", "revoke"}:
+        if len(parts) < 4:
+            await send_telegram_text(chat_id, f"Формат: /admin {action} <telegram_user_id> <role>")
+            return {"ok": True, "action": f"admin_{action}_bad_format"}
+
+        target_uid = parts[2].strip()
+        role = parts[3].strip().lower()
+        allowed = {"viewer", "operator", "admin", "superadmin"}
+        if not target_uid or role not in allowed:
+            await send_telegram_text(chat_id, "Роль должна быть одной из: viewer, operator, admin, superadmin.")
+            return {"ok": True, "action": f"admin_{action}_invalid_role"}
+
+        if action == "grant":
+            ok = store.grant_role(target_uid, role, granted_by=f"tg_admin:{user_id}")
+            if not ok:
+                await send_telegram_text(chat_id, "Не удалось выдать роль.")
+                return {"ok": True, "action": "admin_grant_failed"}
+            store.log_bot_event(
+                "admin_grant_role",
+                telegram_user_id=user_id,
+                telegram_chat_id=chat_id,
+                payload={"target": target_uid, "role": role},
+            )
+            await send_telegram_text(chat_id, f"Готово: выдана роль {role} пользователю {target_uid}.")
+            return {"ok": True, "action": "admin_grant_done"}
+
+        ok = store.revoke_role(target_uid, role)
+        if not ok:
+            await send_telegram_text(chat_id, "Связка user+role не найдена.")
+            return {"ok": True, "action": "admin_revoke_not_found"}
+        store.log_bot_event(
+            "admin_revoke_role",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"target": target_uid, "role": role},
+        )
+        await send_telegram_text(chat_id, f"Готово: роль {role} отозвана у пользователя {target_uid}.")
+        return {"ok": True, "action": "admin_revoke_done"}
+
+    await send_telegram_text(chat_id, "Неизвестная команда /admin")
+    return {"ok": True, "action": "admin_unknown"}
+
+
 async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callback_query_id: str | None) -> dict:
     if callback_query_id:
         await answer_telegram_callback(callback_query_id)
@@ -687,6 +782,8 @@ async def process_telegram_update(payload: dict) -> dict:
         return await _handle_alerts(chat_id, user_id, text)
     if text.startswith("/domains"):
         return await _handle_domains_now(chat_id, user_id, text)
+    if text.startswith("/admin"):
+        return await _handle_admin(chat_id, user_id, text)
 
     await send_telegram_text(chat_id, "Не понял команду. Используйте /help")
     return {"ok": True, "action": "unknown_command"}

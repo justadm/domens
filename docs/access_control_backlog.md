@@ -5,10 +5,10 @@
 - Env admins (`TELEGRAM_ADMIN_USER_IDS`) are still supported and synced to DB on startup.
 - Monitoring sends admin copy of alerts to configured admin Telegram users.
 - Cabinet/API expose admin-only operations for role management.
+- Telegram bot supports admin commands: `/admin roles|users|grant|revoke`.
 
 ## Remaining gaps
 - Fine-grained permissions matrix is not implemented yet (`permissions`, `role_permissions`).
-- Telegram bot admin commands are not yet exposed (`/admin grant/revoke/list`).
 - No separate `access_events` table for explicit audit trail (partial audit only in `bot_events`).
 
 ## Planned DB extensions
