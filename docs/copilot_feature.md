@@ -11,8 +11,7 @@ while enforcing explicit confirmation before any state-changing action.
 
 ## User Flows
 1. User sends free-form message via web widget:
-   - `Задать вопрос` (assistant mode),
-   - `Просто поговорить` (chat mode).
+   - `Отправить` (assistant mode).
 2. System detects intent + entities + confidence.
 3. If action is mutating:
    - system creates action preview,
@@ -44,6 +43,21 @@ Parity channels:
     - `только свободные` / `only available` -> return only actionable statuses
     - `все с приоритетом` / `all with priority` -> include fallback but rank actionable first
 - `help|qa|chat` -> conversational answer (no confirm)
+
+## LLM NLU (optional)
+- Added optional NLU layer before rule-based parser.
+- Expected model output is strict JSON (`intent`, `confidence`, `entities`).
+- If model confidence is below threshold or provider fails, parser falls back to current rule-based intent detection.
+- Even with LLM enabled, mutating actions still require explicit confirmation token.
+
+Env flags:
+- `COPILOT_LLM_NLU_ENABLED` - enable/disable LLM NLU layer.
+- `COPILOT_LLM_PROVIDER` - `ollama` or `openrouter`.
+- `COPILOT_LLM_TIMEOUT_SECONDS` - timeout for model call.
+- `COPILOT_LLM_CONFIDENCE_THRESHOLD` - minimum confidence to trust LLM output.
+- `COPILOT_LLM_OLLAMA_BASE_URL`, `COPILOT_LLM_OLLAMA_MODEL` - local Ollama settings.
+- `COPILOT_LLM_FALLBACK_ENABLED` - enable provider fallback.
+- `COPILOT_LLM_FALLBACK_BASE_URL`, `COPILOT_LLM_FALLBACK_API_KEY`, `COPILOT_LLM_FALLBACK_MODEL` - fallback provider settings.
 
 ## Language handling
 - Response language is derived from stored user `locale` (`en*` -> English, otherwise Russian).

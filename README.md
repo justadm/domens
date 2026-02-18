@@ -14,6 +14,7 @@ MVP-сервис для поиска/отслеживания востребов
 - `docs/telegram_bot_scope.md` — продуктовый scope Telegram-бота (команды, дисклеймер, подписки, этапы)
 - `docs/telegram_local_and_prod_runbook.md` — как переключить Telegram с локального polling на прод webhook (IP/домен/HTTPS)
 - `docs/copilot_feature.md` — свободные обращения клиента (вопрос/чат/действия с подтверждением) + детальный аудит
+- `docs/llm_nlu_runbook.md` — подключение LLM для intent parsing (Ollama + fallback), безопасные ограничения
 - `app/` — каркас backend (FastAPI)
 
 ## Быстрый старт
@@ -99,6 +100,7 @@ make down
 - Свободный текст от клиента обрабатывается по интентам и confidence.
 - Изменяющие действия (`watch`, `alerts`, `register`) выполняются только после явного подтверждения.
 - Веб-интерфейс: кнопки `Задать вопрос` и `Просто поговорить` + блок подтверждения.
+- Веб-интерфейс: кнопка `Отправить` + блок подтверждения.
 - Telegram/MAX паритет для Copilot:
   - Telegram: `/ask`, `/chat`, `/confirm <cp_token>`, `/cancel <cp_token>`
   - MAX: `/ask`, `/chat`, `/confirm <cp_token>`, `/cancel <cp_token>`
@@ -109,6 +111,11 @@ make down
   - `conversation_messages`
   - `copilot_action_confirmations`
   - `copilot_events`
+- Опционально доступен LLM-NLU слой (Ollama/OpenRouter) с fallback на rule-based parser:
+  - `COPILOT_LLM_NLU_ENABLED`
+  - `COPILOT_LLM_PROVIDER`
+  - `COPILOT_LLM_CONFIDENCE_THRESHOLD`
+  - см. `docs/llm_nlu_runbook.md`
 
 ## LK без авторизации (опционально)
 - Для быстрого входа в кабинет можно включить гостевой режим:

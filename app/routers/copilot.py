@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
 from app.services.domain_checker import infer_status
+from app.services.llm_nlu import detect_intent_with_llm
 from app.services.domain_scoring import score_domain
 from app.services.timeweb_api import TimewebApiClient
 from app.state import store
@@ -441,6 +442,31 @@ async def process_copilot_message(
 
     message_text = str(message or "").strip()
     intent, confidence, entities = _detect_intent(message_text, mode)
+    intent_source = "rules"
+    llm_meta: dict = {}
+    if settings.copilot_llm_nlu_enabled:
+        try:
+            llm_result = await detect_intent_with_llm(message=message_text, mode=mode, lang=lang)
+            if llm_result:
+                llm_meta = {
+                    "provider": llm_result.provider,
+                    "model": llm_result.model,
+                    "intent": llm_result.intent,
+                    "confidence": llm_result.confidence,
+                }
+                if llm_result.confidence >= float(settings.copilot_llm_confidence_threshold):
+                    intent = llm_result.intent
+                    confidence = llm_result.confidence
+                    entities = llm_result.entities or {}
+                    intent_source = "llm"
+                else:
+                    intent_source = "rules_llm_low_confidence"
+            else:
+                intent_source = "rules_llm_empty"
+        except Exception as exc:
+            intent_source = "rules_llm_failed"
+            llm_meta = {"error": str(exc)}
+
     store.log_conversation_message(
         conversation_id=conversation_id,
         telegram_user_id=user_id,
@@ -448,13 +474,20 @@ async def process_copilot_message(
         message_text=message_text,
         intent=intent,
         confidence=confidence,
-        raw_payload={"mode": mode, "channel": channel, "entities": entities},
+        raw_payload={"mode": mode, "channel": channel, "entities": entities, "intent_source": intent_source},
     )
     store.log_copilot_event(
         event_type="message_received",
         telegram_user_id=user_id,
         conversation_id=conversation_id,
-        payload={"mode": mode, "intent": intent, "confidence": confidence, "entities": entities},
+        payload={
+            "mode": mode,
+            "intent": intent,
+            "confidence": confidence,
+            "entities": entities,
+            "intent_source": intent_source,
+            "llm": llm_meta,
+        },
     )
 
     if intent == "domain_check":

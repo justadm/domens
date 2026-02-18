@@ -68,6 +68,17 @@ class Settings(BaseSettings):
     monitor_alert_per_target_daily_limit: int = 25
     monitor_alert_global_run_limit: int = 12
 
+    copilot_llm_nlu_enabled: bool = False
+    copilot_llm_provider: str = "ollama"
+    copilot_llm_timeout_seconds: int = 12
+    copilot_llm_confidence_threshold: float = 0.65
+    copilot_llm_ollama_base_url: str = "http://localhost:11434"
+    copilot_llm_ollama_model: str = "qwen2.5:7b-instruct"
+    copilot_llm_fallback_enabled: bool = False
+    copilot_llm_fallback_base_url: str = "https://openrouter.ai/api/v1"
+    copilot_llm_fallback_api_key: str = ""
+    copilot_llm_fallback_model: str = "qwen/qwen2.5-7b-instruct:free"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
