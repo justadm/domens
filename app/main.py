@@ -43,6 +43,12 @@ async def web_index() -> FileResponse:
     return FileResponse(web_dir / "index.html")
 
 
+@app.get("/admin", include_in_schema=False)
+@app.get("/admin/", include_in_schema=False)
+async def web_admin_index() -> FileResponse:
+    return FileResponse(web_dir / "index.html")
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse()
