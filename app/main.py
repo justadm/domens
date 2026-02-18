@@ -11,6 +11,7 @@ from app.routers.admin import router as admin_router
 from app.routers.alerts import router as alerts_router
 from app.routers.auth import router as auth_router
 from app.routers.cabinet import router as cabinet_router
+from app.routers.copilot import router as copilot_router
 from app.routers.domains import router as domains_router
 from app.routers.max import router as max_router
 from app.routers.monitoring import router as monitoring_router
@@ -33,6 +34,7 @@ app.include_router(activity_router)
 app.include_router(auth_router)
 app.include_router(cabinet_router)
 app.include_router(admin_router)
+app.include_router(copilot_router)
 app.mount("/web", StaticFiles(directory=web_dir), name="web")
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -250,6 +251,80 @@ class AccessEventModel(Base):
     )
     action: Mapped[str] = mapped_column(Text, nullable=False)
     role_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ConversationModel(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    telegram_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False, default="web")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ConversationMessageModel(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False
+    )
+    telegram_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(Text, nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class CopilotActionConfirmationModel(Base):
+    __tablename__ = "copilot_action_confirmations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False
+    )
+    telegram_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    action_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    confirmation_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    result_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class CopilotEventModel(Base):
+    __tablename__ = "copilot_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    telegram_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=True
+    )
+    confirmation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("copilot_action_confirmations.id"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -1412,3 +1487,221 @@ class PostgresStore:
                 items = [item for item in items if str(item.get("target_telegram_user_id", "")).strip() == target_uid]
 
             return items[:safe_limit]
+
+    def create_conversation(self, telegram_user_id: str, channel: str = "web") -> str:
+        safe_uid = str(telegram_user_id).strip()
+        if not safe_uid:
+            return ""
+        with self._session() as session:
+            row = ConversationModel(
+                telegram_user_id=safe_uid,
+                channel=str(channel).strip() or "web",
+                status="active",
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return str(row.id)
+
+    def get_conversation(self, conversation_id: str, telegram_user_id: str | None = None) -> dict | None:
+        try:
+            cid = uuid.UUID(str(conversation_id).strip())
+        except ValueError:
+            return None
+        with self._session() as session:
+            row = session.execute(select(ConversationModel).where(ConversationModel.id == cid).limit(1)).scalar_one_or_none()
+            if not row:
+                return None
+            if telegram_user_id and str(row.telegram_user_id).strip() != str(telegram_user_id).strip():
+                return None
+            return {
+                "id": str(row.id),
+                "telegram_user_id": row.telegram_user_id,
+                "channel": row.channel,
+                "status": row.status,
+                "created_at": row.created_at.isoformat(),
+                "updated_at": row.updated_at.isoformat(),
+            }
+
+    def log_conversation_message(
+        self,
+        conversation_id: str,
+        telegram_user_id: str,
+        direction: str,
+        message_text: str,
+        intent: str | None = None,
+        confidence: float | None = None,
+        raw_payload: dict | None = None,
+    ) -> str:
+        safe_uid = str(telegram_user_id).strip()
+        safe_text = str(message_text).strip()
+        if not safe_uid:
+            return ""
+        try:
+            cid = uuid.UUID(str(conversation_id).strip())
+        except ValueError:
+            return ""
+        with self._session() as session:
+            conversation = session.execute(
+                select(ConversationModel).where(ConversationModel.id == cid).limit(1)
+            ).scalar_one_or_none()
+            if not conversation:
+                return ""
+
+            item = ConversationMessageModel(
+                conversation_id=cid,
+                telegram_user_id=safe_uid,
+                direction=str(direction).strip().lower() or "assistant",
+                message_text=safe_text,
+                intent=(str(intent).strip().lower() if intent else None),
+                confidence=confidence,
+                raw_payload=raw_payload or {},
+            )
+            session.add(item)
+            conversation.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            session.refresh(item)
+            return str(item.id)
+
+    def create_copilot_confirmation(
+        self,
+        telegram_user_id: str,
+        conversation_id: str,
+        action_type: str,
+        action_payload: dict,
+        ttl_minutes: int = 5,
+    ) -> dict | None:
+        safe_uid = str(telegram_user_id).strip()
+        safe_action = str(action_type).strip().lower()
+        if not safe_uid or not safe_action:
+            return None
+        try:
+            cid = uuid.UUID(str(conversation_id).strip())
+        except ValueError:
+            return None
+
+        token = f"cp_{secrets.token_hex(16)}"
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=max(1, ttl_minutes))
+        with self._session() as session:
+            row = CopilotActionConfirmationModel(
+                conversation_id=cid,
+                telegram_user_id=safe_uid,
+                action_type=safe_action,
+                action_payload=action_payload or {},
+                status="pending",
+                confirmation_token=token,
+                expires_at=expires_at,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return {
+                "id": str(row.id),
+                "conversation_id": str(row.conversation_id),
+                "telegram_user_id": row.telegram_user_id,
+                "action_type": row.action_type,
+                "action_payload": row.action_payload or {},
+                "status": row.status,
+                "confirmation_token": row.confirmation_token,
+                "expires_at": row.expires_at.isoformat(),
+                "created_at": row.created_at.isoformat(),
+                "updated_at": row.updated_at.isoformat(),
+            }
+
+    def get_copilot_confirmation(self, confirmation_token: str, telegram_user_id: str | None = None) -> dict | None:
+        token = str(confirmation_token).strip()
+        if not token:
+            return None
+        with self._session() as session:
+            row = session.execute(
+                select(CopilotActionConfirmationModel)
+                .where(CopilotActionConfirmationModel.confirmation_token == token)
+                .limit(1)
+            ).scalar_one_or_none()
+            if not row:
+                return None
+            if telegram_user_id and str(row.telegram_user_id).strip() != str(telegram_user_id).strip():
+                return None
+            return {
+                "id": str(row.id),
+                "conversation_id": str(row.conversation_id),
+                "telegram_user_id": row.telegram_user_id,
+                "action_type": row.action_type,
+                "action_payload": row.action_payload or {},
+                "status": row.status,
+                "confirmation_token": row.confirmation_token,
+                "expires_at": row.expires_at.isoformat(),
+                "result_payload": row.result_payload or {},
+                "error_message": row.error_message,
+                "created_at": row.created_at.isoformat(),
+                "updated_at": row.updated_at.isoformat(),
+            }
+
+    def update_copilot_confirmation_status(
+        self,
+        confirmation_token: str,
+        status: str,
+        result_payload: dict | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        token = str(confirmation_token).strip()
+        safe_status = str(status).strip().lower()
+        if not token or not safe_status:
+            return False
+        with self._session() as session:
+            row = session.execute(
+                select(CopilotActionConfirmationModel)
+                .where(CopilotActionConfirmationModel.confirmation_token == token)
+                .limit(1)
+            ).scalar_one_or_none()
+            if not row:
+                return False
+            row.status = safe_status
+            row.result_payload = result_payload if result_payload is not None else row.result_payload
+            row.error_message = str(error_message).strip() if error_message else None
+            row.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return True
+
+    def log_copilot_event(
+        self,
+        event_type: str,
+        telegram_user_id: str,
+        conversation_id: str | None = None,
+        confirmation_token: str | None = None,
+        payload: dict | None = None,
+    ) -> str:
+        safe_event = str(event_type).strip().lower()
+        safe_uid = str(telegram_user_id).strip()
+        if not safe_event or not safe_uid:
+            return ""
+
+        conversation_uuid = None
+        confirmation_uuid = None
+        with self._session() as session:
+            if conversation_id:
+                try:
+                    conversation_uuid = uuid.UUID(str(conversation_id).strip())
+                except ValueError:
+                    conversation_uuid = None
+
+            if confirmation_token:
+                row = session.execute(
+                    select(CopilotActionConfirmationModel.id)
+                    .where(CopilotActionConfirmationModel.confirmation_token == str(confirmation_token).strip())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if row:
+                    confirmation_uuid = row
+
+            item = CopilotEventModel(
+                telegram_user_id=safe_uid,
+                conversation_id=conversation_uuid,
+                confirmation_id=confirmation_uuid,
+                event_type=safe_event,
+                payload=payload or {},
+            )
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+            return str(item.id)

@@ -115,3 +115,61 @@ CREATE TABLE registration_orders (
 
 CREATE INDEX idx_registration_orders_status_created
   ON registration_orders (status, created_at DESC);
+
+CREATE TABLE conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  telegram_user_id TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'web',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversations_user
+  ON conversations (telegram_user_id, updated_at DESC);
+
+CREATE TABLE conversation_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  telegram_user_id TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  message_text TEXT NOT NULL,
+  intent TEXT,
+  confidence NUMERIC(5,4),
+  raw_payload JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversation_messages_conv
+  ON conversation_messages (conversation_id, created_at DESC);
+
+CREATE TABLE copilot_action_confirmations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  telegram_user_id TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  action_payload JSONB,
+  status TEXT NOT NULL DEFAULT 'pending',
+  confirmation_token TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  result_payload JSONB,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_copilot_confirm_user
+  ON copilot_action_confirmations (telegram_user_id, created_at DESC);
+
+CREATE TABLE copilot_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  telegram_user_id TEXT NOT NULL,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  confirmation_id UUID REFERENCES copilot_action_confirmations(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  payload JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_copilot_events_user
+  ON copilot_events (telegram_user_id, created_at DESC);

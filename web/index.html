@@ -226,6 +226,25 @@
                 <div id="cabinet-history" class="list-box"></div>
               </article>
 
+              <article class="cabinet-card">
+                <h3 data-i18n="copilot_title">Copilot</h3>
+                <p class="muted" data-i18n="copilot_hint">Свободный текст + подтверждение действий.</p>
+                <label>
+                  <span data-i18n="copilot_input">Сообщение</span>
+                  <textarea id="copilot-input" rows="4" placeholder="Например: добавь watch для ai security в .ai,.io"></textarea>
+                </label>
+                <div class="inline-actions">
+                  <button type="button" class="btn-primary" id="copilot-ask-btn" data-i18n="copilot_ask">Задать вопрос</button>
+                  <button type="button" class="btn-secondary" id="copilot-chat-btn" data-i18n="copilot_chat">Просто поговорить</button>
+                </div>
+                <div class="inline-actions compact hidden" id="copilot-confirm-box">
+                  <input id="copilot-confirm-token" placeholder="cp_..." />
+                  <button type="button" class="btn-primary" id="copilot-confirm-btn" data-i18n="copilot_confirm">Подтвердить действие</button>
+                  <button type="button" class="btn-secondary" id="copilot-cancel-btn" data-i18n="copilot_cancel">Отменить</button>
+                </div>
+                <pre id="copilot-output" class="output"></pre>
+              </article>
+
               <article class="cabinet-card hidden" id="cabinet-admin-card">
                 <h3 data-i18n="cabinet_admin">Админ</h3>
                 <div class="inline-actions compact">

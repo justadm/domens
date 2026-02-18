@@ -137,6 +137,57 @@ Response `200`:
 }
 ```
 
+## 7) Copilot (free-form assistant)
+
+### POST `/v1/copilot/message`
+Request:
+```json
+{
+  "message": "добавь watch для ai security",
+  "mode": "assistant",
+  "conversation_id": null,
+  "channel": "web"
+}
+```
+
+Response:
+```json
+{
+  "conversation_id": "uuid",
+  "reply": "Понял как создание watch-правила...",
+  "intent": "create_watch",
+  "confidence": 0.88,
+  "requires_confirmation": true,
+  "confirmation_token": "cp_xxx",
+  "action_preview": {
+    "action": "create_watch",
+    "query": "ai security",
+    "tlds": [".com", ".io", ".ai", ".ru"]
+  }
+}
+```
+
+### POST `/v1/copilot/confirm`
+Request:
+```json
+{
+  "confirmation_token": "cp_xxx",
+  "decision": "confirm"
+}
+```
+
+Response:
+```json
+{
+  "status": "executed",
+  "message": "Действие выполнено.",
+  "execution_result": {
+    "rule_id": "uuid",
+    "query": "ai security"
+  }
+}
+```
+
 ## Module boundaries
 - `collector -> checker`:
   - input: список доменов

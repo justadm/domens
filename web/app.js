@@ -71,6 +71,13 @@ const I18N = {
     cabinet_admin_access: "Аудит доступа",
     cabinet_admin_access_action: "Action",
     cabinet_admin_access_limit: "Лимит",
+    copilot_title: "Copilot",
+    copilot_hint: "Свободный текст + подтверждение действий.",
+    copilot_input: "Сообщение",
+    copilot_ask: "Задать вопрос",
+    copilot_chat: "Просто поговорить",
+    copilot_confirm: "Подтвердить действие",
+    copilot_cancel: "Отменить",
   },
   en: {
     lang: "Language",
@@ -144,6 +151,13 @@ const I18N = {
     cabinet_admin_access: "Access Audit",
     cabinet_admin_access_action: "Action",
     cabinet_admin_access_limit: "Limit",
+    copilot_title: "Copilot",
+    copilot_hint: "Free-form text with explicit action confirmation.",
+    copilot_input: "Message",
+    copilot_ask: "Ask a question",
+    copilot_chat: "Just chat",
+    copilot_confirm: "Confirm action",
+    copilot_cancel: "Cancel",
   },
 };
 
@@ -162,6 +176,8 @@ let cabinetState = {
   accessEvents: [],
 };
 let cabinetRefreshTimer = null;
+let copilotConversationId = "";
+let copilotPendingToken = "";
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -400,6 +416,75 @@ function setCabinetMessage(message) {
   if (historyEl) historyEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (adminEl) adminEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (accessEl) accessEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+}
+
+function setCopilotConfirmUI(token) {
+  const box = document.getElementById("copilot-confirm-box");
+  const tokenInput = document.getElementById("copilot-confirm-token");
+  if (!box || !tokenInput) return;
+  copilotPendingToken = String(token || "").trim();
+  tokenInput.value = copilotPendingToken;
+  if (copilotPendingToken) {
+    box.classList.remove("hidden");
+  } else {
+    box.classList.add("hidden");
+  }
+}
+
+function renderCopilotOutput(payload) {
+  const out = document.getElementById("copilot-output");
+  if (!out) return;
+  out.textContent = JSON.stringify(payload, null, 2);
+}
+
+async function sendCopilot(mode) {
+  if (!authState.authenticated || !authState.user) {
+    setCabinetMessage(I18N[currentLang].cabinet_login_required);
+    return;
+  }
+  const input = document.getElementById("copilot-input");
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+
+  try {
+    const data = await api("/v1/copilot/message", {
+      method: "POST",
+      body: JSON.stringify({
+        message,
+        mode,
+        conversation_id: copilotConversationId || null,
+        channel: "web",
+      }),
+    });
+    copilotConversationId = data.conversation_id || copilotConversationId;
+    renderCopilotOutput(data);
+    setCopilotConfirmUI(data.requires_confirmation ? data.confirmation_token : "");
+  } catch (err) {
+    renderCopilotOutput({ error: String(err) });
+  }
+}
+
+async function resolveCopilot(decision) {
+  const tokenInput = document.getElementById("copilot-confirm-token");
+  const token = (tokenInput?.value || copilotPendingToken || "").trim();
+  if (!token) return;
+  try {
+    const data = await api("/v1/copilot/confirm", {
+      method: "POST",
+      body: JSON.stringify({
+        confirmation_token: token,
+        decision,
+      }),
+    });
+    renderCopilotOutput(data);
+    if (data.status !== "pending") {
+      setCopilotConfirmUI("");
+      await refreshCabinet();
+    }
+  } catch (err) {
+    renderCopilotOutput({ error: String(err) });
+  }
 }
 
 function renderCabinetProfile(data) {
@@ -1133,6 +1218,22 @@ document.getElementById("cabinet-admin-revoke-btn").addEventListener("click", as
   } catch (err) {
     setCabinetMessage(String(err));
   }
+});
+
+document.getElementById("copilot-ask-btn").addEventListener("click", async () => {
+  await sendCopilot("assistant");
+});
+
+document.getElementById("copilot-chat-btn").addEventListener("click", async () => {
+  await sendCopilot("chat");
+});
+
+document.getElementById("copilot-confirm-btn").addEventListener("click", async () => {
+  await resolveCopilot("confirm");
+});
+
+document.getElementById("copilot-cancel-btn").addEventListener("click", async () => {
+  await resolveCopilot("cancel");
 });
 
 applyTheme(currentTheme);

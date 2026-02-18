@@ -13,6 +13,7 @@ MVP-сервис для поиска/отслеживания востребов
 - `docs/domain_base_strategy.md` — как собирать релевантную базу доменов
 - `docs/telegram_bot_scope.md` — продуктовый scope Telegram-бота (команды, дисклеймер, подписки, этапы)
 - `docs/telegram_local_and_prod_runbook.md` — как переключить Telegram с локального polling на прод webhook (IP/домен/HTTPS)
+- `docs/copilot_feature.md` — свободные обращения клиента (вопрос/чат/действия с подтверждением) + детальный аудит
 - `app/` — каркас backend (FastAPI)
 
 ## Быстрый старт
@@ -90,6 +91,19 @@ make down
   - `POST /v1/admin/grant`
   - `POST /v1/admin/revoke`
 - Доступ к `/v1/admin/*`: только для пользователей с ролью `admin|superadmin` (или env admin fallback).
+
+## Copilot (MVP+)
+- Endpoints:
+  - `POST /v1/copilot/message`
+  - `POST /v1/copilot/confirm`
+- Свободный текст от клиента обрабатывается по интентам и confidence.
+- Изменяющие действия (`watch`, `alerts`, `register`) выполняются только после явного подтверждения.
+- Веб-интерфейс: кнопки `Задать вопрос` и `Просто поговорить` + блок подтверждения.
+- Подробный аудит хранится в таблицах:
+  - `conversations`
+  - `conversation_messages`
+  - `copilot_action_confirmations`
+  - `copilot_events`
 
 ## Провайдеры
 - Регистратор: Timeweb (`TIMEWEB_API_*`), используется endpoint `POST /api/v1/add-domain/{fqdn}`.
