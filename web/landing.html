@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Domens Radar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/web/landing.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Domens Radar</span>
+        </div>
+        <nav class="links">
+          <a class="btn" href="/docs" target="_blank" rel="noreferrer">API</a>
+          <a class="btn" href="/admin">Admin</a>
+          <a class="btn btn-primary" href="/lk">Войти в ЛК</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <article class="card">
+            <h1>Поиск, мониторинг и регистрация доменов в одном потоке</h1>
+            <p>
+              Сервис отслеживает кандидатов по TLD, анализирует статусы освобождения, отправляет алерты в Telegram/MAX
+              и запускает регистрацию только после подтверждения.
+            </p>
+            <ul class="bullets">
+              <li>Проверка статусов: available, pendingDelete, redemption, clientHold и другие.</li>
+              <li>Watch-правила, подписки, аудит действий и история событий.</li>
+              <li>Copilot-режим: свободный текст + подтверждение действий перед выполнением.</li>
+            </ul>
+            <div style="margin-top: 16px;">
+              <a class="btn btn-primary" href="/lk">Открыть личный кабинет</a>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="metrics">
+              <div class="mini metric">
+                <p>TLD поддержка</p>
+                <h3>.ru .com .io .ai</h3>
+              </div>
+              <div class="mini metric">
+                <p>Каналы</p>
+                <h3>Web / Telegram / MAX</h3>
+              </div>
+              <div class="mini metric">
+                <p>Управление</p>
+                <h3>RBAC + Admin</h3>
+              </div>
+              <div class="mini metric">
+                <p>Интеграции</p>
+                <h3>Timeweb / Selectel / Reg.ru</h3>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="sections">
+        <div class="container">
+          <article class="section">
+            <h2>Что уже доступно в MVP</h2>
+            <div class="grid">
+              <div class="mini">
+                <h3>Мониторинг доменов</h3>
+                <p>Сканер кандидатов, score, ETA освобождения, ручной и циклический запуск.</p>
+              </div>
+              <div class="mini">
+                <h3>Личный кабинет</h3>
+                <p>Профиль, подписки, watch-правила, история и Copilot-интерфейс.</p>
+              </div>
+              <div class="mini">
+                <h3>Админ-панель</h3>
+                <p>Статистика, список клиентов, события с фильтрацией и CSV экспортом.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="section">
+            <h2>Юридическая информация</h2>
+            <div class="grid">
+              <div class="mini">
+                <h3>Политика конфиденциальности</h3>
+                <p>Добавим публичный документ и версионирование в прод-окружении.</p>
+              </div>
+              <div class="mini">
+                <h3>Оферта / договор</h3>
+                <p>Разместим отдельные страницы и свяжем с кабинетом и документами.</p>
+              </div>
+              <div class="mini">
+                <h3>Контакты</h3>
+                <p>Контакты поддержки и операционные каналы будут вынесены в отдельный блок.</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container">Domens Radar MVP</div>
+    </footer>
+  </body>
+</html>

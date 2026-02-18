@@ -39,6 +39,12 @@ app.mount("/web", StaticFiles(directory=web_dir), name="web")
 
 
 @app.get("/", include_in_schema=False)
+async def web_landing() -> FileResponse:
+    return FileResponse(web_dir / "landing.html")
+
+
+@app.get("/lk", include_in_schema=False)
+@app.get("/lk/", include_in_schema=False)
 async def web_index() -> FileResponse:
     return FileResponse(web_dir / "index.html")
 

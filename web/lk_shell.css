@@ -1,0 +1,116 @@
+/* Spark-inspired shell layer for /lk while preserving existing component IDs. */
+
+:root {
+  --shell-bg: #f3f6fb;
+  --shell-sidebar: #ffffff;
+  --shell-main: #f6f8fc;
+  --shell-border: #d7e0ef;
+  --shell-text: #253552;
+  --shell-muted: #6f809e;
+}
+
+html[data-theme="dark"] {
+  --shell-bg: #0b1220;
+  --shell-sidebar: #0f1728;
+  --shell-main: #111c31;
+  --shell-border: #243753;
+  --shell-text: #eaf1ff;
+  --shell-muted: #8ea2c7;
+}
+
+body {
+  background: var(--shell-bg);
+  color: var(--shell-text);
+}
+
+.app-shell {
+  grid-template-columns: 280px 1fr;
+}
+
+.sidebar {
+  background: var(--shell-sidebar);
+  border-right: 1px solid var(--shell-border);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.02);
+}
+
+.sidebar-brand {
+  border: 1px solid var(--shell-border);
+  border-radius: 12px;
+  background: rgba(93, 142, 228, 0.06);
+  padding: 12px;
+}
+
+.sidebar-brand strong {
+  color: var(--shell-text);
+  font-size: 20px;
+}
+
+.sidebar-brand small {
+  color: var(--shell-muted);
+}
+
+.nav-group {
+  border-color: var(--shell-border);
+}
+
+.nav-group summary {
+  background: rgba(100, 144, 221, 0.1);
+}
+
+.nav-item,
+.nav-sub {
+  color: var(--shell-text);
+}
+
+.nav-item.active,
+.nav-sub.active {
+  background: rgba(63, 140, 255, 0.13);
+  border-color: rgba(63, 140, 255, 0.4);
+}
+
+.main-wrap {
+  background: var(--shell-main);
+  min-height: 100vh;
+}
+
+.main-header.panel {
+  border-radius: 14px;
+  border-color: var(--shell-border);
+  background: var(--shell-sidebar);
+}
+
+.panel,
+.cabinet-card,
+.list-box {
+  border-color: var(--shell-border);
+}
+
+.panel {
+  background: var(--shell-sidebar);
+}
+
+.section-head h2,
+h1,
+h2,
+h3 {
+  color: var(--shell-text);
+}
+
+.subtitle,
+.muted,
+.kv-key {
+  color: var(--shell-muted);
+}
+
+@media (max-width: 1120px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-border);
+  }
+}

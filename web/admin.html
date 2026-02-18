@@ -4,73 +4,100 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Domens Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/web/admin.css" />
   </head>
   <body>
-    <div class="layout">
+    <div class="wrapper">
       <aside class="sidebar">
-        <h1>Domens Admin</h1>
-        <nav>
-          <button class="nav-btn active" data-page="dashboard">Дашборд</button>
-          <button class="nav-btn" data-page="clients">Клиенты</button>
-          <button class="nav-btn" data-page="events">События</button>
-        </nav>
+        <a class="sidebar-brand" href="/admin">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Domens Admin</span>
+        </a>
+        <div class="sidebar-content">
+          <div class="sidebar-user">
+            <div class="avatar">A</div>
+            <div>
+              <div class="fw-bold">Admin Panel</div>
+              <small>Domain Operations</small>
+            </div>
+          </div>
+          <nav class="sidebar-nav">
+            <button class="nav-btn active" data-page="dashboard">Дашборд</button>
+            <button class="nav-btn" data-page="clients">Клиенты</button>
+            <button class="nav-btn" data-page="events">События</button>
+          </nav>
+        </div>
       </aside>
-      <main class="content">
-        <header class="topbar">
-          <div id="auth-line">Проверка доступа...</div>
-          <a class="link-btn" href="/">Открыть основной интерфейс</a>
+      <main class="main">
+        <header class="hero">
+          <div class="hero-title-wrap">
+            <h1>Админ-панель</h1>
+            <p>Пользователи, события и аудит в одном интерфейсе</p>
+          </div>
+          <div class="hero-actions">
+            <div id="auth-line">Проверка доступа...</div>
+            <a class="link-btn" href="/lk">Открыть ЛК</a>
+          </div>
         </header>
+        <div class="content container-fluid">
 
-        <section id="page-dashboard" class="page">
-          <h2>Общая статистика</h2>
-          <div id="dashboard-stats" class="cards"></div>
-          <div class="links">
-            <a href="#clients" id="link-clients">Перейти к клиентам</a>
-            <a href="#events" id="link-events">Перейти к событиям</a>
-          </div>
-          <pre id="dashboard-raw" class="raw"></pre>
-        </section>
+          <section id="page-dashboard" class="page">
+            <h2>Общая статистика</h2>
+            <div id="dashboard-stats" class="cards"></div>
+            <div class="links">
+              <a href="#clients" id="link-clients">Перейти к клиентам</a>
+              <a href="#events" id="link-events">Перейти к событиям</a>
+            </div>
+            <pre id="dashboard-raw" class="raw"></pre>
+          </section>
 
-        <section id="page-clients" class="page hidden">
-          <h2>Список клиентов</h2>
-          <div class="filters">
-            <input id="clients-search" placeholder="@username / user_id / chat_id" />
-            <input id="clients-permission" placeholder="permission contains" />
-            <select id="clients-registered">
-              <option value="false">Все</option>
-              <option value="true">Только зарегистрированные</option>
-            </select>
-            <input id="clients-limit" type="number" min="1" max="200" value="50" />
-            <button id="clients-apply">Применить</button>
-          </div>
-          <div class="pager">
-            <button id="clients-prev">Назад</button>
-            <button id="clients-next">Вперёд</button>
-            <button id="clients-export">Экспорт CSV</button>
-            <span id="clients-page"></span>
-          </div>
-          <div id="clients-table"></div>
-        </section>
+          <section id="page-clients" class="page hidden">
+            <h2>Список клиентов</h2>
+            <div class="filters">
+              <input id="clients-search" placeholder="@username / user_id / chat_id" />
+              <input id="clients-permission" placeholder="permission contains" />
+              <select id="clients-registered">
+                <option value="false">Все</option>
+                <option value="true">Только зарегистрированные</option>
+              </select>
+              <input id="clients-limit" type="number" min="1" max="200" value="50" />
+              <button id="clients-apply">Применить</button>
+            </div>
+            <div class="pager">
+              <button id="clients-prev">Назад</button>
+              <button id="clients-next">Вперёд</button>
+              <button id="clients-export">Экспорт CSV</button>
+              <span id="clients-page"></span>
+            </div>
+            <div id="clients-table"></div>
+          </section>
 
-        <section id="page-events" class="page hidden">
-          <h2>События</h2>
-          <div class="filters">
-            <input id="events-type" placeholder="event_type" />
-            <input id="events-user" placeholder="telegram_user_id" />
-            <input id="events-chat" placeholder="telegram_chat_id" />
-            <input id="events-search" placeholder="поиск по payload" />
-            <input id="events-limit" type="number" min="1" max="300" value="50" />
-            <button id="events-apply">Применить</button>
-          </div>
-          <div class="pager">
-            <button id="events-prev">Назад</button>
-            <button id="events-next">Вперёд</button>
-            <button id="events-export">Экспорт CSV</button>
-            <span id="events-page"></span>
-          </div>
-          <div id="events-table"></div>
-        </section>
+          <section id="page-events" class="page hidden">
+            <h2>События</h2>
+            <div class="filters">
+              <input id="events-type" placeholder="event_type" />
+              <input id="events-user" placeholder="telegram_user_id" />
+              <input id="events-chat" placeholder="telegram_chat_id" />
+              <input id="events-search" placeholder="поиск по payload" />
+              <input id="events-limit" type="number" min="1" max="300" value="50" />
+              <button id="events-apply">Применить</button>
+            </div>
+            <div class="pager">
+              <button id="events-prev">Назад</button>
+              <button id="events-next">Вперёд</button>
+              <button id="events-export">Экспорт CSV</button>
+              <span id="events-page"></span>
+            </div>
+            <div id="events-table"></div>
+          </section>
+        </div>
+        <footer class="footer">
+          <span>Domens Radar</span>
+          <span>Admin Console</span>
+        </footer>
       </main>
     </div>
     <script src="/web/admin.js"></script>
