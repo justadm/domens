@@ -68,6 +68,9 @@ const I18N = {
     cabinet_admin_role: "Роль",
     cabinet_admin_grant: "Выдать роль",
     cabinet_admin_revoke: "Снять роль",
+    cabinet_admin_access: "Аудит доступа",
+    cabinet_admin_access_action: "Action",
+    cabinet_admin_access_limit: "Лимит",
   },
   en: {
     lang: "Language",
@@ -138,6 +141,9 @@ const I18N = {
     cabinet_admin_role: "Role",
     cabinet_admin_grant: "Grant role",
     cabinet_admin_revoke: "Revoke role",
+    cabinet_admin_access: "Access Audit",
+    cabinet_admin_access_action: "Action",
+    cabinet_admin_access_limit: "Limit",
   },
 };
 
@@ -146,7 +152,15 @@ let currentTheme = localStorage.getItem("domens_theme") || "dark";
 let lastResults = [];
 let sortState = { key: "domain", dir: "asc" };
 let authState = { authenticated: false, user: null };
-let cabinetState = { profile: null, subscriptions: [], watchRules: [], history: [], adminUsers: [], roles: [] };
+let cabinetState = {
+  profile: null,
+  subscriptions: [],
+  watchRules: [],
+  history: [],
+  adminUsers: [],
+  roles: [],
+  accessEvents: [],
+};
 let cabinetRefreshTimer = null;
 
 async function api(path, options = {}) {
@@ -379,11 +393,13 @@ function setCabinetMessage(message) {
   const watchEl = document.getElementById("cabinet-watch-list");
   const historyEl = document.getElementById("cabinet-history");
   const adminEl = document.getElementById("cabinet-admin-users");
+  const accessEl = document.getElementById("cabinet-admin-access-events");
   if (profileEl) profileEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (subsEl) subsEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (watchEl) watchEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (historyEl) historyEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (adminEl) adminEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (accessEl) accessEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
 }
 
 function renderCabinetProfile(data) {
@@ -474,6 +490,38 @@ function renderCabinetAdmin(users, roles) {
           <span>${escapeHtml(item.username ? `@${item.username}` : item.first_name || "-")}</span>
           <time>${formatDate(item.updated_at)}</time>
         </div>
+      </article>
+    `,
+    )
+    .join("");
+}
+
+function renderCabinetAccessEvents(items) {
+  const root = document.getElementById("cabinet-admin-access-events");
+  const card = document.getElementById("cabinet-admin-card");
+  if (!root || !card) return;
+  const isAdmin = Boolean(authState?.user?.is_admin);
+  if (!isAdmin) {
+    root.innerHTML = "";
+    return;
+  }
+  if (!items || !items.length) {
+    root.innerHTML = `<p class="feed-empty">${I18N[currentLang].cabinet_empty}</p>`;
+    return;
+  }
+  root.innerHTML = items
+    .map(
+      (item) => `
+      <article class="list-row">
+        <div class="feed-row">
+          <strong>${escapeHtml(item.action || "-")}</strong>
+          <span class="feed-status">${escapeHtml(item.role_code || "-")}</span>
+        </div>
+        <div class="feed-row">
+          <span>${escapeHtml((item.actor_telegram_user_id || "-") + " -> " + (item.target_telegram_user_id || "-"))}</span>
+          <time>${formatDate(item.created_at)}</time>
+        </div>
+        <pre class="output">${escapeHtml(JSON.stringify(item.payload || {}, null, 2))}</pre>
       </article>
     `,
     )
@@ -608,15 +656,24 @@ async function refreshCabinet() {
 
     let adminUsers = [];
     let roles = [];
+    let accessEvents = [];
     if (profile.is_admin) {
       const usersParams = new URLSearchParams({ limit: String(adminLimit) });
       if (adminSearch) usersParams.set("search", adminSearch);
-      const [usersResp, rolesResp] = await Promise.all([
+      const accessAction = (document.getElementById("cabinet-admin-access-action")?.value || "").trim();
+      const accessLimitRaw = Number(document.getElementById("cabinet-admin-access-limit")?.value || 50);
+      const accessLimit = Number.isFinite(accessLimitRaw) ? Math.max(1, Math.min(300, accessLimitRaw)) : 50;
+      const accessParams = new URLSearchParams({ limit: String(accessLimit) });
+      if (accessAction) accessParams.set("action", accessAction);
+
+      const [usersResp, rolesResp, accessResp] = await Promise.all([
         api(`/v1/admin/users?${usersParams.toString()}`),
         api("/v1/admin/roles"),
+        api(`/v1/admin/access-events?${accessParams.toString()}`),
       ]);
       adminUsers = usersResp.items || [];
       roles = rolesResp.items || [];
+      accessEvents = accessResp.items || [];
     }
 
     cabinetState = {
@@ -626,12 +683,14 @@ async function refreshCabinet() {
       history: history.items || [],
       adminUsers,
       roles,
+      accessEvents,
     };
     renderCabinetProfile(profile);
     renderCabinetSubscriptions(cabinetState.subscriptions);
     renderCabinetWatchRules(cabinetState.watchRules);
     renderCabinetHistory(cabinetState.history);
     renderCabinetAdmin(cabinetState.adminUsers, cabinetState.roles);
+    renderCabinetAccessEvents(cabinetState.accessEvents);
   } catch (err) {
     setCabinetMessage(String(err));
   }
@@ -1032,6 +1091,17 @@ document.getElementById("cabinet-admin-search").addEventListener("input", () => 
 });
 
 document.getElementById("cabinet-admin-limit").addEventListener("change", () => {
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-access-action").addEventListener("input", () => {
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-access-limit").addEventListener("change", () => {
   refreshCabinet();
 });
 

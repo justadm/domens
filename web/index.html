@@ -240,6 +240,18 @@
                 </div>
                 <button type="button" class="btn-ghost" id="cabinet-admin-refresh-btn">Refresh admin</button>
                 <div id="cabinet-admin-users" class="list-box"></div>
+                <h4 style="margin: 8px 0 0 0;" data-i18n="cabinet_admin_access">Аудит доступа</h4>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_admin_access_action">Action</span>
+                    <input id="cabinet-admin-access-action" placeholder="grant_role" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_access_limit">Лимит</span>
+                    <input id="cabinet-admin-access-limit" type="number" min="1" max="300" value="50" />
+                  </label>
+                </div>
+                <div id="cabinet-admin-access-events" class="list-box"></div>
                 <form id="cabinet-admin-role-form" class="form-stack">
                   <label>
                     <span data-i18n="cabinet_admin_target">User ID</span>
