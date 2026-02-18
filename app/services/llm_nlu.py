@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -31,6 +32,8 @@ INTENT_ALIASES = {
 }
 
 DOMAIN_PATTERN = re.compile(r"\b[a-z0-9][a-z0-9-]{0,61}\.[a-z0-9.-]{2,24}\b", re.IGNORECASE)
+WORD_PATTERN = re.compile(r"[a-zA-Zа-яА-Я0-9_]{3,}")
+_KB_PARAGRAPHS: list[tuple[str, str]] | None = None
 
 
 @dataclass
@@ -146,6 +149,9 @@ def _normalize_entities(intent: str, entities: dict, message_text: str) -> dict:
 
 
 def _build_prompt(message: str, mode: str, lang: str) -> str:
+    knowledge_block = _select_knowledge_context(message, settings.copilot_llm_knowledge_max_chars)
+    if knowledge_block:
+        knowledge_block = f"Knowledge snippets:\n{knowledge_block}\n"
     return (
         "You are NLU parser for a domain automation system.\n"
         "Return ONLY one JSON object. No markdown.\n"
@@ -160,8 +166,10 @@ def _build_prompt(message: str, mode: str, lang: str) -> str:
         "- for state-changing actions keep intent explicit.\n"
         "- if uncertain choose chat.\n"
         "- confidence in range 0..1.\n"
+        "- use knowledge snippets as source of truth for domain-specific commands/flows.\n"
         f"- user language: {lang}.\n"
         f"- ui mode hint: {mode}.\n"
+        f"{knowledge_block}"
         f"User message: {message}\n"
     )
 
@@ -185,6 +193,7 @@ def _trim_reply_text(text: str, max_chars: int) -> tuple[str, str | None]:
 
 def _build_chat_prompt(message: str, intent: str, lang: str, history: list[dict]) -> str:
     max_chars = max(120, int(settings.copilot_llm_reply_max_chars))
+    knowledge_block = _select_knowledge_context(message, settings.copilot_llm_knowledge_max_chars)
     lines = []
     for item in history[-8:]:
         direction = "user" if str(item.get("direction")) == "user" else "assistant"
@@ -192,6 +201,8 @@ def _build_chat_prompt(message: str, intent: str, lang: str, history: list[dict]
         if text:
             lines.append(f"{direction}: {text}")
     history_block = "\n".join(lines) if lines else "(empty)"
+    if knowledge_block:
+        knowledge_block = f"Knowledge snippets:\n{knowledge_block}\n"
 
     return (
         "You are an assistant for domain monitoring and registration service.\n"
@@ -201,6 +212,7 @@ def _build_chat_prompt(message: str, intent: str, lang: str, history: list[dict]
         f"Intent hint: {intent}\n"
         f"User language: {lang}\n"
         f"Max answer length: {max_chars} chars\n"
+        f"{knowledge_block}"
         "Recent context:\n"
         f"{history_block}\n"
         "User message:\n"
@@ -209,15 +221,107 @@ def _build_chat_prompt(message: str, intent: str, lang: str, history: list[dict]
     )
 
 
-async def _call_ollama(message: str, mode: str, lang: str) -> LlmNluResult | None:
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _load_kb_paragraphs() -> list[tuple[str, str]]:
+    global _KB_PARAGRAPHS
+    if _KB_PARAGRAPHS is not None:
+        return _KB_PARAGRAPHS
+
+    if not settings.copilot_llm_knowledge_enabled:
+        _KB_PARAGRAPHS = []
+        return _KB_PARAGRAPHS
+
+    root = _project_root()
+    files = [item.strip() for item in str(settings.copilot_llm_knowledge_files or "").split(",") if item.strip()]
+    paragraphs: list[tuple[str, str]] = []
+    for rel in files:
+        path = root / rel
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        chunks = [re.sub(r"\s+", " ", block).strip() for block in text.split("\n\n")]
+        for chunk in chunks:
+            if len(chunk) < 30:
+                continue
+            paragraphs.append((rel, chunk[:1000]))
+
+    _KB_PARAGRAPHS = paragraphs[:2000]
+    return _KB_PARAGRAPHS
+
+
+def _query_terms(text: str) -> set[str]:
+    return {m.group(0).lower() for m in WORD_PATTERN.finditer(str(text or ""))}
+
+
+def _score_paragraph(query_terms: set[str], paragraph: str) -> int:
+    if not query_terms:
+        return 0
+    words = {m.group(0).lower() for m in WORD_PATTERN.finditer(paragraph)}
+    return len(query_terms & words)
+
+
+def _select_knowledge_context(message: str, max_chars: int) -> str:
+    if not settings.copilot_llm_knowledge_enabled:
+        return ""
+    limit = max(400, int(max_chars or 2400))
+    terms = _query_terms(message)
+    rows = _load_kb_paragraphs()
+    if not rows:
+        return ""
+
+    scored: list[tuple[int, str, str]] = []
+    for source, paragraph in rows:
+        score = _score_paragraph(terms, paragraph)
+        if score > 0:
+            scored.append((score, source, paragraph))
+    if not scored:
+        # fallback: first few headings/paragraphs if no overlap
+        scored = [(1, source, paragraph) for source, paragraph in rows[:6]]
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    picked: list[str] = []
+    used = 0
+    for _score, source, paragraph in scored:
+        line = f"[{source}] {paragraph}"
+        if used + len(line) + 1 > limit:
+            continue
+        picked.append(line)
+        used += len(line) + 1
+        if len(picked) >= 6:
+            break
+    return "\n".join(picked)
+
+
+def _intent_model() -> str:
+    return str(settings.copilot_llm_intent_model or settings.copilot_llm_ollama_model).strip() or "qwen2.5:0.5b"
+
+
+def _reply_model() -> str:
+    return str(settings.copilot_llm_reply_model or settings.copilot_llm_ollama_model).strip() or "qwen2.5:7b-instruct"
+
+
+def _intent_timeout() -> int:
+    return max(3, int(settings.copilot_llm_intent_timeout_seconds or settings.copilot_llm_timeout_seconds))
+
+
+def _reply_timeout() -> int:
+    return max(3, int(settings.copilot_llm_reply_timeout_seconds or settings.copilot_llm_timeout_seconds))
+
+
+async def _call_ollama(message: str, mode: str, lang: str, model: str, timeout: int) -> LlmNluResult | None:
     url = settings.copilot_llm_ollama_base_url.rstrip("/") + "/api/generate"
     payload = {
-        "model": settings.copilot_llm_ollama_model,
+        "model": model,
         "prompt": _build_prompt(message, mode, lang),
         "stream": False,
         "format": "json",
     }
-    timeout = max(3, int(settings.copilot_llm_timeout_seconds))
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
@@ -233,7 +337,7 @@ async def _call_ollama(message: str, mode: str, lang: str) -> LlmNluResult | Non
         confidence=confidence,
         entities=entities,
         provider="ollama",
-        model=settings.copilot_llm_ollama_model,
+        model=model,
     )
 
 
@@ -278,14 +382,20 @@ async def _call_openrouter(message: str, mode: str, lang: str) -> LlmNluResult |
     )
 
 
-async def _generate_reply_ollama(message: str, intent: str, lang: str, history: list[dict]) -> LlmReplyResult | None:
+async def _generate_reply_ollama(
+    message: str,
+    intent: str,
+    lang: str,
+    history: list[dict],
+    model: str,
+    timeout: int,
+) -> LlmReplyResult | None:
     url = settings.copilot_llm_ollama_base_url.rstrip("/") + "/api/generate"
     payload = {
-        "model": settings.copilot_llm_ollama_model,
+        "model": model,
         "prompt": _build_chat_prompt(message=message, intent=intent, lang=lang, history=history),
         "stream": False,
     }
-    timeout = max(3, int(settings.copilot_llm_timeout_seconds))
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
@@ -297,7 +407,7 @@ async def _generate_reply_ollama(message: str, intent: str, lang: str, history: 
     return LlmReplyResult(
         reply=text,
         provider="ollama",
-        model=settings.copilot_llm_ollama_model,
+        model=model,
         trim_reason=trim_reason,
     )
 
@@ -344,7 +454,13 @@ async def detect_intent_with_llm(message: str, mode: str, lang: str) -> LlmNluRe
 
     provider = str(settings.copilot_llm_provider or "ollama").strip().lower()
     if provider == "ollama":
-        result = await _call_ollama(message=message, mode=mode, lang=lang)
+        result = await _call_ollama(
+            message=message,
+            mode=mode,
+            lang=lang,
+            model=_intent_model(),
+            timeout=_intent_timeout(),
+        )
         if result:
             return result
         if settings.copilot_llm_fallback_enabled:
@@ -374,7 +490,14 @@ async def generate_chat_reply_with_llm(
     context = history or []
     provider = str(settings.copilot_llm_provider or "ollama").strip().lower()
     if provider == "ollama":
-        result = await _generate_reply_ollama(message=message, intent=intent, lang=lang, history=context)
+        result = await _generate_reply_ollama(
+            message=message,
+            intent=intent,
+            lang=lang,
+            history=context,
+            model=_reply_model(),
+            timeout=_reply_timeout(),
+        )
         if result:
             return result
         if settings.copilot_llm_fallback_enabled:

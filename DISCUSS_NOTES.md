@@ -20,3 +20,10 @@ Updated: 2026-02-18
 - Added role hierarchy guard in API/Telegram:
   - only `superadmin` can grant/revoke `admin|superadmin`;
   - `admin` can manage only `viewer|operator`.
+- Cabinet admin "Access Audit" now supports server-side filters and pagination:
+  - filters: `action`, `actor_telegram_user_id`, `target_telegram_user_id`, `created_from`, `created_to`;
+  - pagination: `limit`, `offset`, `next_offset`, `prev_offset`.
+- Added hybrid LLM MVP architecture (documented):
+  - intent parsing -> `0.5b`,
+  - chat/qa replies -> `7b`,
+  - dedicated plan: `docs/hybrid_llm_mvp_plan.md`.

@@ -69,10 +69,16 @@ def _llm_degrade_reason(inflight: int) -> str | None:
 
 
 def get_copilot_runtime_status() -> dict:
+    intent_model = str(settings.copilot_llm_intent_model or settings.copilot_llm_ollama_model or "")
+    reply_model = str(settings.copilot_llm_reply_model or settings.copilot_llm_ollama_model or "")
     return {
         "llm_enabled": bool(settings.copilot_llm_nlu_enabled),
         "provider": str(settings.copilot_llm_provider or "ollama"),
-        "model": str(settings.copilot_llm_ollama_model or ""),
+        "model": intent_model,
+        "intent_model": intent_model,
+        "reply_model": reply_model,
+        "intent_timeout_seconds": int(settings.copilot_llm_intent_timeout_seconds or settings.copilot_llm_timeout_seconds),
+        "reply_timeout_seconds": int(settings.copilot_llm_reply_timeout_seconds or settings.copilot_llm_timeout_seconds),
         "fallback_enabled": bool(settings.copilot_llm_fallback_enabled),
         "fallback_model": str(settings.copilot_llm_fallback_model or ""),
         "confidence_threshold": float(settings.copilot_llm_confidence_threshold),
@@ -143,6 +149,7 @@ def _t(lang: str, key: str) -> str:
         "create_watch_confirm": "Понял как создание watch-правила: `{value}`. Подтвердите выполнение.",
         "toggle_alerts_confirm": "Понял запрос на переключение алертов. Подтвердите выполнение.",
         "register_domain_confirm": "Понял запрос на регистрацию: `{value}`. Подтвердите выполнение.",
+        "register_domain_forbidden": "Недостаточно прав для регистрации домена. Нужна роль operator/admin/superadmin.",
         "request_received": "Запрос получен.",
         "domain_missing": "Не вижу домен в запросе. Пример: `проверь freebrand.com`.",
         "domain_suggest_missing": "Уточните тематику. Пример: `подбери домен для fintech в зоне .ai,.ru`.",
@@ -167,6 +174,7 @@ def _t(lang: str, key: str) -> str:
         "create_watch_confirm": "I understood this as creating a watch rule: `{value}`. Please confirm.",
         "toggle_alerts_confirm": "I understood this as alert toggle request. Please confirm.",
         "register_domain_confirm": "I understood this as registration request: `{value}`. Please confirm.",
+        "register_domain_forbidden": "Not enough permissions for domain registration. Required role: operator/admin/superadmin.",
         "request_received": "Request received.",
         "domain_missing": "No domain detected. Example: `check freebrand.com`.",
         "domain_suggest_missing": "Please specify the topic. Example: `suggest domains for fintech in .ai,.ru`.",
@@ -189,6 +197,19 @@ def _require_user(request: Request) -> AuthUserResponse:
     if not user:
         raise HTTPException(status_code=401, detail="unauthorized")
     return user
+
+
+def _env_admin_ids() -> set[str]:
+    return {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
+
+
+def _can_register_domain(telegram_user_id: str) -> bool:
+    uid = str(telegram_user_id).strip()
+    if not uid:
+        return False
+    if uid in _env_admin_ids():
+        return True
+    return store.has_any_role(uid, ["operator", "admin", "superadmin"])
 
 
 def _extract_first_domain(text: str) -> str | None:
@@ -371,6 +392,8 @@ def _extract_suggest_query(raw: str) -> str:
     compact = str(raw or "")
     for marker in [
         "подбери",
+        "подберем",
+        "подберём",
         "подобрать",
         "подбор",
         "предложи",
@@ -414,7 +437,19 @@ def _detect_intent(text: str, mode: str) -> tuple[str, float, dict]:
         entities["query"] = _extract_watch_query(raw)
         return "create_watch", 0.88, entities
 
-    if any(word in lowered for word in ["подбери", "подобрать", "подбор", "предложи дом", "suggest domain", "find domain"]):
+    if any(
+        word in lowered
+        for word in [
+            "подбери",
+            "подберем",
+            "подберём",
+            "подобрать",
+            "подбор",
+            "предложи дом",
+            "suggest domain",
+            "find domain",
+        ]
+    ):
         entities["query"] = _extract_suggest_query(raw)
         entities["tlds"] = _extract_requested_tlds(raw)
         entities["suggest_mode"] = _extract_suggest_mode(raw)
@@ -730,6 +765,31 @@ async def process_copilot_message(
     action = _action_from_intent(intent, entities) if mode == "assistant" else None
     if action:
         action_type, action_payload = action
+        if action_type == "register_domain" and not _can_register_domain(user_id):
+            reply = _t(lang, "register_domain_forbidden")
+            store.log_copilot_event(
+                event_type="action_forbidden",
+                telegram_user_id=user_id,
+                conversation_id=conversation_id,
+                payload={"action_type": action_type, "reason": "role_required"},
+            )
+            store.log_conversation_message(
+                conversation_id=conversation_id,
+                telegram_user_id=user_id,
+                direction="assistant",
+                message_text=reply,
+                intent=intent,
+                confidence=confidence,
+                raw_payload={"action_type": action_type, "forbidden": True},
+            )
+            await _dec_inflight()
+            return CopilotMessageResponse(
+                conversation_id=conversation_id,
+                reply=reply,
+                intent=intent,
+                confidence=confidence,
+                requires_confirmation=False,
+            )
         confirmation = store.create_copilot_confirmation(
             telegram_user_id=user_id,
             conversation_id=conversation_id,
@@ -924,6 +984,8 @@ async def process_copilot_confirm(user_id: str, confirmation_token: str, decisio
             execution_result = {"enabled": enabled}
 
         elif action_type == "register_domain":
+            if not _can_register_domain(user_id):
+                raise PermissionError("role operator/admin/superadmin is required for register_domain")
             domain = str(action_payload.get("domain") or "").strip().lower()
             if not domain:
                 raise RuntimeError("domain is empty")

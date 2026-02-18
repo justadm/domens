@@ -36,7 +36,7 @@ Parity channels:
 ## Current Intent Set (MVP)
 - `create_watch` -> add watch rule (requires confirm)
 - `toggle_alerts` -> on/off telegram alerts (requires confirm)
-- `register_domain` -> create+execute registration flow (requires confirm)
+- `register_domain` -> create+execute registration flow (requires confirm, role `operator|admin|superadmin`)
 - `domain_check` -> status check with provider inference (no confirm)
 - `domain_suggest` -> generate candidate names by topic+TLD, filter noisy names, prioritize actionable statuses (`available/pending_delete/redemption/client_hold`) before reply (no confirm)
   - Supports explicit mode in prompt:
@@ -55,6 +55,8 @@ Env flags:
 - `COPILOT_LLM_NLU_ENABLED` - enable/disable LLM NLU layer.
 - `COPILOT_LLM_PROVIDER` - `ollama` or `openrouter`.
 - `COPILOT_LLM_TIMEOUT_SECONDS` - timeout for model call.
+- `COPILOT_LLM_INTENT_MODEL` / `COPILOT_LLM_REPLY_MODEL` - separate models for intent parsing and chat/qa replies.
+- `COPILOT_LLM_INTENT_TIMEOUT_SECONDS` / `COPILOT_LLM_REPLY_TIMEOUT_SECONDS` - separate timeouts by path.
 - `COPILOT_LLM_CONFIDENCE_THRESHOLD` - minimum confidence to trust LLM output.
 - `COPILOT_LLM_MAX_PARALLEL` - max concurrent LLM calls (CPU protection).
 - `COPILOT_LLM_CHAT_CONTEXT_MESSAGES` - recent messages count used for conversational replies.

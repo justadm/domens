@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -25,6 +27,11 @@ class AdminRolesResponse(BaseModel):
 
 
 class AdminAccessEventsResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
     items: list[dict]
 
 
@@ -137,19 +144,24 @@ async def revoke_role(payload: RoleAssignRequest, request: Request) -> RoleAssig
 async def list_access_events(
     request: Request,
     limit: int = 100,
+    offset: int = 0,
     action: str | None = None,
     actor_telegram_user_id: str | None = None,
     target_telegram_user_id: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ) -> AdminAccessEventsResponse:
     _require_admin(request)
-    return AdminAccessEventsResponse(
-        items=store.list_access_events(
-            limit=limit,
-            action=action,
-            actor_telegram_user_id=actor_telegram_user_id,
-            target_telegram_user_id=target_telegram_user_id,
-        )
+    page = store.list_access_events_page(
+        limit=limit,
+        offset=offset,
+        action=action,
+        actor_telegram_user_id=actor_telegram_user_id,
+        target_telegram_user_id=target_telegram_user_id,
+        created_from=created_from,
+        created_to=created_to,
     )
+    return AdminAccessEventsResponse(**page)
 
 
 @router.get("/copilot-runtime", response_model=CopilotRuntimeResponse)

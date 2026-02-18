@@ -15,6 +15,7 @@ MVP-сервис для поиска/отслеживания востребов
 - `docs/telegram_local_and_prod_runbook.md` — как переключить Telegram с локального polling на прод webhook (IP/домен/HTTPS)
 - `docs/copilot_feature.md` — свободные обращения клиента (вопрос/чат/действия с подтверждением) + детальный аудит
 - `docs/llm_nlu_runbook.md` — подключение LLM для intent parsing (Ollama + fallback), безопасные ограничения
+- `docs/hybrid_llm_mvp_plan.md` — целевая архитектура MVP: `0.5b` для intent, `7b` для chat/qa, state machine и quality gates
 - `docs/shared_ollama_multi_project.md` — одна общая Ollama-модель для нескольких проектов, с изоляцией коннекторов
 - `app/` — каркас backend (FastAPI)
 
@@ -90,7 +91,7 @@ make down
 - Админ API:
   - `GET /v1/admin/roles`
   - `GET /v1/admin/users`
-  - `GET /v1/admin/access-events`
+  - `GET /v1/admin/access-events` (filters + pagination: `action`, `actor`, `target`, `created_from/to`, `limit/offset`)
   - `POST /v1/admin/grant`
   - `POST /v1/admin/revoke`
 - Доступ к `/v1/admin/*`: только для пользователей с ролью `admin|superadmin` (или env admin fallback).
@@ -102,6 +103,7 @@ make down
   - `POST /v1/copilot/confirm`
 - Свободный текст от клиента обрабатывается по интентам и confidence.
 - Изменяющие действия (`watch`, `alerts`, `register`) выполняются только после явного подтверждения.
+- Для `register` требуется роль `operator|admin|superadmin`.
 - Веб-интерфейс: кнопки `Задать вопрос` и `Просто поговорить` + блок подтверждения.
 - Веб-интерфейс: кнопка `Отправить` + блок подтверждения.
 - Telegram/MAX паритет для Copilot:
@@ -119,6 +121,11 @@ make down
   - `COPILOT_LLM_NLU_ENABLED`
   - `COPILOT_LLM_PROVIDER`
   - `COPILOT_LLM_CONFIDENCE_THRESHOLD`
+  - `COPILOT_LLM_INTENT_MODEL`, `COPILOT_LLM_REPLY_MODEL`
+  - `COPILOT_LLM_INTENT_TIMEOUT_SECONDS`, `COPILOT_LLM_REPLY_TIMEOUT_SECONDS`
+  - `COPILOT_LLM_KNOWLEDGE_ENABLED`
+  - `COPILOT_LLM_KNOWLEDGE_FILES`
+  - `COPILOT_LLM_KNOWLEDGE_MAX_CHARS`
   - `COPILOT_LLM_CHAT_CONTEXT_MESSAGES`
   - `COPILOT_LLM_REPLY_MAX_CHARS`
   - см. `docs/llm_nlu_runbook.md`

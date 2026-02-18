@@ -266,9 +266,32 @@
                     <input id="cabinet-admin-access-action" placeholder="grant_role" />
                   </label>
                   <label>
+                    <span data-i18n="cabinet_admin_access_actor">Actor user_id</span>
+                    <input id="cabinet-admin-access-actor" placeholder="13903713" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_access_target">Target user_id</span>
+                    <input id="cabinet-admin-access-target" placeholder="42" />
+                  </label>
+                </div>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_admin_access_from">С</span>
+                    <input id="cabinet-admin-access-from" type="datetime-local" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_access_to">По</span>
+                    <input id="cabinet-admin-access-to" type="datetime-local" />
+                  </label>
+                  <label>
                     <span data-i18n="cabinet_admin_access_limit">Лимит</span>
                     <input id="cabinet-admin-access-limit" type="number" min="1" max="300" value="50" />
                   </label>
+                </div>
+                <div class="inline-actions compact">
+                  <button type="button" class="btn-ghost" id="cabinet-admin-access-prev-btn" data-i18n="cabinet_admin_access_prev">Назад</button>
+                  <button type="button" class="btn-ghost" id="cabinet-admin-access-next-btn" data-i18n="cabinet_admin_access_next">Вперёд</button>
+                  <span id="cabinet-admin-access-page-info" class="muted"></span>
                 </div>
                 <div id="cabinet-admin-access-events" class="list-box"></div>
                 <h4 style="margin: 8px 0 0 0;" data-i18n="cabinet_admin_copilot_runtime">Copilot runtime</h4>

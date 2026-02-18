@@ -27,22 +27,64 @@ def test_admin_access_events_returns_items(monkeypatch) -> None:
 
     monkeypatch.setattr(
         admin_router.store,
-        "list_access_events",
-        lambda **kwargs: [
-            {
-                "id": "evt-1",
-                "action": "grant_role",
-                "role_code": "operator",
-                "actor_telegram_user_id": "13903713",
-                "target_telegram_user_id": "111",
-                "payload": {"source": "api"},
-                "created_at": "2026-02-18T00:00:00+00:00",
-            }
-        ],
+        "list_access_events_page",
+        lambda **kwargs: {
+            "total": 1,
+            "limit": int(kwargs.get("limit", 10)),
+            "offset": int(kwargs.get("offset", 0)),
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "id": "evt-1",
+                    "action": "grant_role",
+                    "role_code": "operator",
+                    "actor_telegram_user_id": "13903713",
+                    "target_telegram_user_id": "111",
+                    "payload": {"source": "api"},
+                    "created_at": "2026-02-18T00:00:00+00:00",
+                }
+            ],
+        },
     )
 
     response = client.get("/v1/admin/access-events?limit=10")
     assert response.status_code == 200
     data = response.json()
+    assert data["total"] == 1
+    assert data["offset"] == 0
     assert isinstance(data.get("items"), list)
     assert data["items"][0]["action"] == "grant_role"
+
+
+def test_admin_access_events_forwards_filters(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+
+    captured: dict = {}
+
+    def _fake_page(**kwargs):
+        captured.update(kwargs)
+        return {"total": 0, "limit": 5, "offset": 10, "next_offset": None, "prev_offset": 5, "items": []}
+
+    monkeypatch.setattr(admin_router.store, "list_access_events_page", _fake_page)
+
+    response = client.get(
+        "/v1/admin/access-events"
+        "?limit=5&offset=10&action=grant_role"
+        "&actor_telegram_user_id=13903713&target_telegram_user_id=42"
+        "&created_from=2026-02-18T00:00:00Z&created_to=2026-02-18T23:59:59Z"
+    )
+    assert response.status_code == 200
+    assert captured["limit"] == 5
+    assert captured["offset"] == 10
+    assert captured["action"] == "grant_role"
+    assert captured["actor_telegram_user_id"] == "13903713"
+    assert captured["target_telegram_user_id"] == "42"
+    assert captured["created_from"] is not None
+    assert captured["created_to"] is not None

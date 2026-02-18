@@ -46,11 +46,18 @@ COPILOT_LLM_NLU_ENABLED=true
 COPILOT_LLM_PROVIDER=ollama
 COPILOT_LLM_TIMEOUT_SECONDS=12
 COPILOT_LLM_CONFIDENCE_THRESHOLD=0.65
+COPILOT_LLM_INTENT_MODEL=qwen2.5:0.5b
+COPILOT_LLM_REPLY_MODEL=qwen2.5:7b-instruct
+COPILOT_LLM_INTENT_TIMEOUT_SECONDS=12
+COPILOT_LLM_REPLY_TIMEOUT_SECONDS=35
 COPILOT_LLM_MAX_PARALLEL=1
 COPILOT_LLM_CHAT_CONTEXT_MESSAGES=5
 COPILOT_LLM_REPLY_MAX_CHARS=700
 COPILOT_LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
 COPILOT_LLM_OLLAMA_MODEL=qwen2.5:0.5b
+COPILOT_LLM_KNOWLEDGE_ENABLED=true
+COPILOT_LLM_KNOWLEDGE_FILES=README.md,docs/copilot_feature.md,docs/api_contracts.md,docs/telegram_bot_scope.md
+COPILOT_LLM_KNOWLEDGE_MAX_CHARS=2400
 
 COPILOT_LLM_FALLBACK_ENABLED=false
 COPILOT_LLM_FALLBACK_BASE_URL=https://openrouter.ai/api/v1
@@ -95,6 +102,18 @@ Admin runtime snapshot:
 3. Send 1-2 normal Copilot requests -> `200`.
 4. Send burst above limit -> expect `429`.
 5. Check `copilot_events` for `message_received`, `assistant_reply`, and overload events (`rate_limited`, `degraded_mode` if triggered).
+
+## Domain Knowledge Injection (no retraining)
+- Use local docs as RAG-lite context in prompts (intent parsing + conversational reply).
+- Keep snippets concise; start with:
+  - `README.md`
+  - `docs/copilot_feature.md`
+  - `docs/api_contracts.md`
+  - `docs/telegram_bot_scope.md`
+- For higher quality understanding switch model to `qwen2.5:7b-instruct` if server capacity is enough.
+- Recommended hybrid profile for MVP:
+  - intent parser -> `qwen2.5:0.5b`,
+  - chat/qa replies -> `qwen2.5:7b-instruct`.
 
 ## Model profile
 - Low RAM MVP: `qwen2.5:0.5b`.

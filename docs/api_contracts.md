@@ -200,6 +200,10 @@ Response `200`:
     "llm_enabled": true,
     "provider": "ollama",
     "model": "qwen2.5:0.5b",
+    "intent_model": "qwen2.5:0.5b",
+    "reply_model": "qwen2.5:7b-instruct",
+    "intent_timeout_seconds": 12,
+    "reply_timeout_seconds": 35,
     "fallback_enabled": false,
     "fallback_model": "qwen/qwen2.5-7b-instruct:free",
     "confidence_threshold": 0.65,
@@ -213,6 +217,44 @@ Response `200`:
       "current_inflight": 1
     }
   }
+}
+```
+
+## 9) Admin access events
+
+### GET `/v1/admin/access-events`
+Admin-only access audit list with server-side filters and pagination.
+
+Query params:
+- `limit` (1..300, default `100`)
+- `offset` (>=0, default `0`)
+- `action` (optional exact match, example `grant_role`)
+- `actor_telegram_user_id` (optional)
+- `target_telegram_user_id` (optional)
+- `created_from` (optional ISO datetime)
+- `created_to` (optional ISO datetime)
+
+Response `200`:
+```json
+{
+  "total": 124,
+  "limit": 50,
+  "offset": 0,
+  "next_offset": 50,
+  "prev_offset": null,
+  "items": [
+    {
+      "id": "evt-1",
+      "action": "grant_role",
+      "role_code": "operator",
+      "actor_telegram_user_id": "13903713",
+      "target_telegram_user_id": "42",
+      "payload": {
+        "source": "api"
+      },
+      "created_at": "2026-02-18T12:00:00+00:00"
+    }
+  ]
 }
 ```
 

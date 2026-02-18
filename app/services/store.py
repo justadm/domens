@@ -14,8 +14,10 @@ from sqlalchemy import (
     Numeric,
     Text,
     UniqueConstraint,
+    and_,
     create_engine,
     desc,
+    func,
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -1447,24 +1449,73 @@ class PostgresStore:
         action: str | None = None,
         actor_telegram_user_id: str | None = None,
         target_telegram_user_id: str | None = None,
+        offset: int = 0,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> list[dict]:
+        page = self.list_access_events_page(
+            limit=limit,
+            offset=offset,
+            action=action,
+            actor_telegram_user_id=actor_telegram_user_id,
+            target_telegram_user_id=target_telegram_user_id,
+            created_from=created_from,
+            created_to=created_to,
+        )
+        return page["items"]
+
+    def list_access_events_page(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        action: str | None = None,
+        actor_telegram_user_id: str | None = None,
+        target_telegram_user_id: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> dict:
         safe_limit = max(1, min(int(limit), 300))
+        safe_offset = max(0, int(offset))
         target_action = (action or "").strip().lower()
         actor_uid = (actor_telegram_user_id or "").strip()
         target_uid = (target_telegram_user_id or "").strip()
-
         with self._session() as session:
             actor_user = aliased(TelegramUserModel)
             target_user = aliased(TelegramUserModel)
 
-            query = (
+            filters = []
+            if target_action:
+                filters.append(func.lower(AccessEventModel.action) == target_action)
+            if actor_uid:
+                filters.append(actor_user.telegram_user_id == actor_uid)
+            if target_uid:
+                filters.append(target_user.telegram_user_id == target_uid)
+            if created_from:
+                filters.append(AccessEventModel.created_at >= created_from)
+            if created_to:
+                filters.append(AccessEventModel.created_at <= created_to)
+
+            base_query = (
                 select(AccessEventModel, actor_user.telegram_user_id, target_user.telegram_user_id)
                 .outerjoin(actor_user, actor_user.id == AccessEventModel.actor_user_id)
                 .outerjoin(target_user, target_user.id == AccessEventModel.target_user_id)
-                .order_by(desc(AccessEventModel.created_at))
-                .limit(safe_limit)
             )
-            rows = session.execute(query).all()
+            if filters:
+                base_query = base_query.where(and_(*filters))
+
+            total_query = (
+                select(func.count())
+                .select_from(AccessEventModel)
+                .outerjoin(actor_user, actor_user.id == AccessEventModel.actor_user_id)
+                .outerjoin(target_user, target_user.id == AccessEventModel.target_user_id)
+            )
+            if filters:
+                total_query = total_query.where(and_(*filters))
+
+            total = int(session.execute(total_query).scalar() or 0)
+            rows = session.execute(
+                base_query.order_by(desc(AccessEventModel.created_at)).offset(safe_offset).limit(safe_limit)
+            ).all()
 
             items: list[dict] = []
             for event, actor_uid_row, target_uid_row in rows:
@@ -1478,15 +1529,16 @@ class PostgresStore:
                     "created_at": event.created_at.isoformat(),
                 }
                 items.append(item)
-
-            if target_action:
-                items = [item for item in items if str(item.get("action", "")).strip().lower() == target_action]
-            if actor_uid:
-                items = [item for item in items if str(item.get("actor_telegram_user_id", "")).strip() == actor_uid]
-            if target_uid:
-                items = [item for item in items if str(item.get("target_telegram_user_id", "")).strip() == target_uid]
-
-            return items[:safe_limit]
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
 
     def create_conversation(self, telegram_user_id: str, channel: str = "web") -> str:
         safe_uid = str(telegram_user_id).strip()

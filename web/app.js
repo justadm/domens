@@ -71,7 +71,14 @@ const I18N = {
     cabinet_admin_revoke: "Снять роль",
     cabinet_admin_access: "Аудит доступа",
     cabinet_admin_access_action: "Действие",
+    cabinet_admin_access_actor: "Actor user_id",
+    cabinet_admin_access_target: "Target user_id",
+    cabinet_admin_access_from: "С",
+    cabinet_admin_access_to: "По",
     cabinet_admin_access_limit: "Лимит",
+    cabinet_admin_access_prev: "Назад",
+    cabinet_admin_access_next: "Вперёд",
+    cabinet_admin_access_page: "Показано {from}-{to} из {total}",
     cabinet_admin_copilot_runtime: "Copilot runtime",
     cabinet_admin_copilot_runtime_refresh: "Обновить runtime",
     copilot_title: "Copilot",
@@ -156,7 +163,14 @@ const I18N = {
     cabinet_admin_revoke: "Revoke role",
     cabinet_admin_access: "Access Audit",
     cabinet_admin_access_action: "Action",
+    cabinet_admin_access_actor: "Actor user_id",
+    cabinet_admin_access_target: "Target user_id",
+    cabinet_admin_access_from: "From",
+    cabinet_admin_access_to: "To",
     cabinet_admin_access_limit: "Limit",
+    cabinet_admin_access_prev: "Prev",
+    cabinet_admin_access_next: "Next",
+    cabinet_admin_access_page: "Showing {from}-{to} of {total}",
     cabinet_admin_copilot_runtime: "Copilot runtime",
     cabinet_admin_copilot_runtime_refresh: "Refresh runtime",
     copilot_title: "Copilot",
@@ -183,12 +197,13 @@ let cabinetState = {
   history: [],
   adminUsers: [],
   roles: [],
-  accessEvents: [],
+  accessAudit: { items: [], total: 0, limit: 50, offset: 0, next_offset: null, prev_offset: null },
 };
 let cabinetRefreshTimer = null;
 let copilotConversationId = "";
 let copilotPendingToken = "";
 let copilotSendInFlight = false;
+let cabinetAccessOffset = 0;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -428,12 +443,14 @@ function setCabinetMessage(message) {
   const historyEl = document.getElementById("cabinet-history");
   const adminEl = document.getElementById("cabinet-admin-users");
   const accessEl = document.getElementById("cabinet-admin-access-events");
+  const accessPageInfo = document.getElementById("cabinet-admin-access-page-info");
   if (profileEl) profileEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (subsEl) subsEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (watchEl) watchEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (historyEl) historyEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (adminEl) adminEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
   if (accessEl) accessEl.innerHTML = `<p class="feed-empty">${escapeHtml(message)}</p>`;
+  if (accessPageInfo) accessPageInfo.textContent = "";
 }
 
 function setCopilotConfirmUI(token) {
@@ -621,15 +638,41 @@ function renderCabinetAdmin(users, roles) {
     .join("");
 }
 
-function renderCabinetAccessEvents(items) {
+function renderCabinetAccessEvents(audit) {
   const root = document.getElementById("cabinet-admin-access-events");
   const card = document.getElementById("cabinet-admin-card");
+  const pageInfo = document.getElementById("cabinet-admin-access-page-info");
+  const prevBtn = document.getElementById("cabinet-admin-access-prev-btn");
+  const nextBtn = document.getElementById("cabinet-admin-access-next-btn");
   if (!root || !card) return;
   const isAdmin = Boolean(authState?.user?.is_admin);
   if (!isAdmin) {
     root.innerHTML = "";
+    if (pageInfo) pageInfo.textContent = "";
     return;
   }
+  const items = audit?.items || [];
+  const total = Number(audit?.total || 0);
+  const offset = Number(audit?.offset || 0);
+  const limit = Number(audit?.limit || items.length || 1);
+  const nextOffset = audit?.next_offset;
+  const prevOffset = audit?.prev_offset;
+
+  if (prevBtn) prevBtn.disabled = prevOffset === null || prevOffset === undefined;
+  if (nextBtn) nextBtn.disabled = nextOffset === null || nextOffset === undefined;
+  if (pageInfo) {
+    if (!total) {
+      pageInfo.textContent = I18N[currentLang].cabinet_empty;
+    } else {
+      const from = offset + 1;
+      const to = Math.min(offset + Math.max(1, limit), total);
+      pageInfo.textContent = I18N[currentLang].cabinet_admin_access_page
+        .replace("{from}", String(from))
+        .replace("{to}", String(to))
+        .replace("{total}", String(total));
+    }
+  }
+
   if (!items || !items.length) {
     root.innerHTML = `<p class="feed-empty">${I18N[currentLang].cabinet_empty}</p>`;
     return;
@@ -781,15 +824,23 @@ async function refreshCabinet() {
 
     let adminUsers = [];
     let roles = [];
-    let accessEvents = [];
+    let accessAudit = { items: [], total: 0, limit: 50, offset: cabinetAccessOffset, next_offset: null, prev_offset: null };
     if (profile.is_admin) {
       const usersParams = new URLSearchParams({ limit: String(adminLimit) });
       if (adminSearch) usersParams.set("search", adminSearch);
       const accessAction = (document.getElementById("cabinet-admin-access-action")?.value || "").trim();
+      const accessActor = (document.getElementById("cabinet-admin-access-actor")?.value || "").trim();
+      const accessTarget = (document.getElementById("cabinet-admin-access-target")?.value || "").trim();
+      const accessFrom = (document.getElementById("cabinet-admin-access-from")?.value || "").trim();
+      const accessTo = (document.getElementById("cabinet-admin-access-to")?.value || "").trim();
       const accessLimitRaw = Number(document.getElementById("cabinet-admin-access-limit")?.value || 50);
       const accessLimit = Number.isFinite(accessLimitRaw) ? Math.max(1, Math.min(300, accessLimitRaw)) : 50;
-      const accessParams = new URLSearchParams({ limit: String(accessLimit) });
+      const accessParams = new URLSearchParams({ limit: String(accessLimit), offset: String(cabinetAccessOffset) });
       if (accessAction) accessParams.set("action", accessAction);
+      if (accessActor) accessParams.set("actor_telegram_user_id", accessActor);
+      if (accessTarget) accessParams.set("target_telegram_user_id", accessTarget);
+      if (accessFrom) accessParams.set("created_from", new Date(accessFrom).toISOString());
+      if (accessTo) accessParams.set("created_to", new Date(accessTo).toISOString());
 
       const [usersResp, rolesResp, accessResp] = await Promise.all([
         api(`/v1/admin/users?${usersParams.toString()}`),
@@ -798,7 +849,15 @@ async function refreshCabinet() {
       ]);
       adminUsers = usersResp.items || [];
       roles = rolesResp.items || [];
-      accessEvents = accessResp.items || [];
+      accessAudit = {
+        items: accessResp.items || [],
+        total: Number(accessResp.total || 0),
+        limit: Number(accessResp.limit || accessLimit),
+        offset: Number(accessResp.offset || 0),
+        next_offset: accessResp.next_offset ?? null,
+        prev_offset: accessResp.prev_offset ?? null,
+      };
+      cabinetAccessOffset = accessAudit.offset;
     }
 
     cabinetState = {
@@ -808,14 +867,14 @@ async function refreshCabinet() {
       history: history.items || [],
       adminUsers,
       roles,
-      accessEvents,
+      accessAudit,
     };
     renderCabinetProfile(profile);
     renderCabinetSubscriptions(cabinetState.subscriptions);
     renderCabinetWatchRules(cabinetState.watchRules);
     renderCabinetHistory(cabinetState.history);
     renderCabinetAdmin(cabinetState.adminUsers, cabinetState.roles);
-    renderCabinetAccessEvents(cabinetState.accessEvents);
+    renderCabinetAccessEvents(cabinetState.accessAudit);
   } catch (err) {
     setCabinetMessage(String(err));
   }
@@ -1227,6 +1286,7 @@ document.getElementById("cabinet-admin-limit").addEventListener("change", () => 
 });
 
 document.getElementById("cabinet-admin-access-action").addEventListener("input", () => {
+  cabinetAccessOffset = 0;
   if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
   cabinetRefreshTimer = setTimeout(() => {
     refreshCabinet();
@@ -1234,7 +1294,48 @@ document.getElementById("cabinet-admin-access-action").addEventListener("input",
 });
 
 document.getElementById("cabinet-admin-access-limit").addEventListener("change", () => {
+  cabinetAccessOffset = 0;
   refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-access-actor").addEventListener("input", () => {
+  cabinetAccessOffset = 0;
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-access-target").addEventListener("input", () => {
+  cabinetAccessOffset = 0;
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-access-from").addEventListener("change", () => {
+  cabinetAccessOffset = 0;
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-access-to").addEventListener("change", () => {
+  cabinetAccessOffset = 0;
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-access-prev-btn").addEventListener("click", async () => {
+  const prevOffset = cabinetState?.accessAudit?.prev_offset;
+  if (prevOffset === null || prevOffset === undefined) return;
+  cabinetAccessOffset = Number(prevOffset) || 0;
+  await refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-access-next-btn").addEventListener("click", async () => {
+  const nextOffset = cabinetState?.accessAudit?.next_offset;
+  if (nextOffset === null || nextOffset === undefined) return;
+  cabinetAccessOffset = Number(nextOffset) || 0;
+  await refreshCabinet();
 });
 
 document.getElementById("cabinet-admin-copilot-runtime-btn").addEventListener("click", async () => {

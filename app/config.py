@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     copilot_llm_reply_max_chars: int = 700
     copilot_llm_ollama_base_url: str = "http://localhost:11434"
     copilot_llm_ollama_model: str = "qwen2.5:7b-instruct"
+    copilot_llm_intent_model: str = "qwen2.5:0.5b"
+    copilot_llm_reply_model: str = "qwen2.5:7b-instruct"
+    copilot_llm_intent_timeout_seconds: int = 12
+    copilot_llm_reply_timeout_seconds: int = 35
+    copilot_llm_knowledge_enabled: bool = True
+    copilot_llm_knowledge_files: str = "README.md,docs/copilot_feature.md,docs/api_contracts.md,docs/telegram_bot_scope.md"
+    copilot_llm_knowledge_max_chars: int = 2400
     copilot_llm_fallback_enabled: bool = False
     copilot_llm_fallback_base_url: str = "https://openrouter.ai/api/v1"
     copilot_llm_fallback_api_key: str = ""

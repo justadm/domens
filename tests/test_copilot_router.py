@@ -189,6 +189,32 @@ def test_copilot_domain_suggest_available_only_mode(monkeypatch) -> None:
     assert "registered" not in data["reply"].lower()
 
 
+def test_copilot_domain_suggest_detects_podberem_phrase(monkeypatch) -> None:
+    _mock_auth(monkeypatch)
+    monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(copilot_router.store, "create_conversation", lambda *_args, **_kwargs: "conv-1")
+    monkeypatch.setattr(copilot_router.store, "log_conversation_message", lambda **_kwargs: "msg-1")
+    monkeypatch.setattr(copilot_router.store, "log_copilot_event", lambda **_kwargs: "evt-1")
+
+    async def _fake_status(domain: str, **_kwargs):
+        if domain.endswith(".ru"):
+            return "available", None
+        return "registered", None
+
+    monkeypatch.setattr(copilot_router, "infer_status", _fake_status)
+    monkeypatch.setattr(copilot_router, "score_domain", lambda _domain: 72)
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/copilot/message",
+        json={"message": "давай подберем домен в зоне .ru для новостного сайта про ИИ", "mode": "assistant"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["intent"] == "domain_suggest"
+    assert "подбор кандидатов" in data["reply"].lower()
+
+
 def test_copilot_uses_llm_intent_when_confident(monkeypatch) -> None:
     _mock_auth(monkeypatch)
     monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
@@ -277,6 +303,54 @@ def test_copilot_chat_uses_llm_reply(monkeypatch) -> None:
     assert "помочь" in data["reply"].lower()
 
 
+def test_copilot_register_domain_forbidden_without_operator_role(monkeypatch) -> None:
+    _mock_auth(monkeypatch)
+    monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(copilot_router.store, "create_conversation", lambda *_args, **_kwargs: "conv-1")
+    monkeypatch.setattr(copilot_router.store, "log_conversation_message", lambda **_kwargs: "msg-1")
+    monkeypatch.setattr(copilot_router.store, "log_copilot_event", lambda **_kwargs: "evt-1")
+    monkeypatch.setattr(copilot_router, "_can_register_domain", lambda _uid: False)
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/copilot/message",
+        json={"message": "зарегистрируй freebrand.com", "mode": "assistant"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["intent"] == "register_domain"
+    assert data["requires_confirmation"] is False
+    assert "Недостаточно прав" in data["reply"]
+
+
+def test_copilot_confirm_register_domain_fails_without_operator_role(monkeypatch) -> None:
+    _mock_auth(monkeypatch)
+    monkeypatch.setattr(copilot_router, "_can_register_domain", lambda _uid: False)
+    monkeypatch.setattr(
+        copilot_router.store,
+        "get_copilot_confirmation",
+        lambda *_args, **_kwargs: {
+            "status": "pending",
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "conversation_id": "conv-1",
+            "action_type": "register_domain",
+            "action_payload": {"domain": "freebrand.com"},
+        },
+    )
+    monkeypatch.setattr(copilot_router.store, "update_copilot_confirmation_status", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(copilot_router.store, "log_copilot_event", lambda **_kwargs: "evt-1")
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/copilot/confirm",
+        json={"confirmation_token": "cp_test_reg_1", "decision": "confirm"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert "operator/admin/superadmin" in data["message"]
+
+
 def test_copilot_rate_limit(monkeypatch) -> None:
     _mock_auth(monkeypatch)
     monkeypatch.setattr(copilot_router.store, "get_conversation", lambda *_args, **_kwargs: None)
@@ -292,3 +366,16 @@ def test_copilot_rate_limit(monkeypatch) -> None:
     second = client.post("/v1/copilot/message", json={"message": "еще", "mode": "chat"})
     assert first.status_code == 200
     assert second.status_code == 429
+
+
+def test_copilot_runtime_exposes_split_models(monkeypatch) -> None:
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_intent_model", "qwen2.5:0.5b")
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_reply_model", "qwen2.5:7b-instruct")
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_intent_timeout_seconds", 12)
+    monkeypatch.setattr(copilot_router.settings, "copilot_llm_reply_timeout_seconds", 35)
+
+    status = copilot_router.get_copilot_runtime_status()
+    assert status["intent_model"] == "qwen2.5:0.5b"
+    assert status["reply_model"] == "qwen2.5:7b-instruct"
+    assert status["intent_timeout_seconds"] == 12
+    assert status["reply_timeout_seconds"] == 35
