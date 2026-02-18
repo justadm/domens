@@ -1,26 +1,38 @@
-/* Spark-inspired shell layer for /lk while preserving existing component IDs. */
+/* Spark-like layout for LK while keeping existing JS hooks. */
 
 :root {
-  --shell-bg: #f3f6fb;
-  --shell-sidebar: #ffffff;
-  --shell-main: #f6f8fc;
-  --shell-border: #d7e0ef;
-  --shell-text: #253552;
-  --shell-muted: #6f809e;
+  --lk-bg: #eef3fb;
+  --lk-surface: #ffffff;
+  --lk-surface-2: #f7faff;
+  --lk-border: #d9e2f1;
+  --lk-text: #213551;
+  --lk-muted: #6f829f;
+  --lk-brand: #1f4f95;
+  --lk-brand-2: #2c64b8;
+}
+
+html[data-theme="light"] {
+  --bg: var(--lk-bg);
+  --panel: var(--lk-surface);
+  --panel-2: var(--lk-surface);
+  --line: var(--lk-border);
+  --text: var(--lk-text);
+  --muted: var(--lk-muted);
+  --accent: #3a79dc;
 }
 
 html[data-theme="dark"] {
-  --shell-bg: #0b1220;
-  --shell-sidebar: #0f1728;
-  --shell-main: #111c31;
-  --shell-border: #243753;
-  --shell-text: #eaf1ff;
-  --shell-muted: #8ea2c7;
+  --bg: #0b1220;
+  --panel: #121c2f;
+  --panel-2: #152338;
+  --line: #274062;
+  --text: #eaf1ff;
+  --muted: #9ab0d4;
+  --accent: #4f93ff;
 }
 
 body {
-  background: var(--shell-bg);
-  color: var(--shell-text);
+  background: var(--bg);
 }
 
 .app-shell {
@@ -28,78 +40,153 @@ body {
 }
 
 .sidebar {
-  background: var(--shell-sidebar);
-  border-right: 1px solid var(--shell-border);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.02);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
 }
 
 .sidebar-brand {
-  border: 1px solid var(--shell-border);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(93, 142, 228, 0.06);
+  background: var(--panel-2);
   padding: 12px;
 }
 
 .sidebar-brand strong {
-  color: var(--shell-text);
   font-size: 20px;
+  line-height: 1.05;
 }
 
 .sidebar-brand small {
-  color: var(--shell-muted);
-}
-
-.nav-group {
-  border-color: var(--shell-border);
-}
-
-.nav-group summary {
-  background: rgba(100, 144, 221, 0.1);
+  color: var(--muted);
 }
 
 .nav-item,
 .nav-sub {
-  color: var(--shell-text);
+  color: var(--text);
 }
 
 .nav-item.active,
 .nav-sub.active {
-  background: rgba(63, 140, 255, 0.13);
-  border-color: rgba(63, 140, 255, 0.4);
+  background: rgba(63, 140, 255, 0.14);
+  border: 1px solid rgba(63, 140, 255, 0.36);
+}
+
+.nav-group {
+  border-color: var(--line);
+}
+
+.nav-group summary {
+  background: rgba(92, 138, 210, 0.12);
 }
 
 .main-wrap {
-  background: var(--shell-main);
   min-height: 100vh;
 }
 
-.main-header.panel {
-  border-radius: 14px;
-  border-color: var(--shell-border);
-  background: var(--shell-sidebar);
+.main-header {
+  min-height: 122px;
+  margin: 0;
+  padding: 20px 20px 16px;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  background: linear-gradient(110deg, var(--lk-brand) 0%, #2b5ca8 50%, #3365b0 100%);
+}
+
+.main-header h1,
+.main-header .subtitle {
+  color: #fff;
+}
+
+.main-header .subtitle {
+  opacity: 0.88;
+}
+
+.controls {
+  align-items: start;
+}
+
+.main-header .panel-lite {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.main-header .auth-user-line,
+.main-header .control,
+.main-header .control span {
+  color: #eef4ff;
+}
+
+.main-header select {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.42);
+  color: #fff;
+}
+
+.main-header .btn-ghost {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.main-header .health-badge {
+  color: #e8fff4;
+  border-color: rgba(127, 245, 185, 0.7);
+  background: rgba(74, 196, 136, 0.13);
+}
+
+.layout {
+  padding: 18px;
+  gap: 12px;
 }
 
 .panel,
-.cabinet-card,
-.list-box {
-  border-color: var(--shell-border);
+.cabinet-card {
+  background: var(--panel);
+  border-color: var(--line);
 }
 
-.panel {
-  background: var(--shell-sidebar);
-}
-
+.stat h3,
 .section-head h2,
-h1,
-h2,
-h3 {
-  color: var(--shell-text);
+.cabinet-card h3 {
+  color: var(--text);
 }
 
-.subtitle,
 .muted,
-.kv-key {
-  color: var(--shell-muted);
+.kv-key,
+.kv-row .kv-value-muted {
+  color: var(--muted);
+}
+
+.list-box,
+.output,
+table,
+th,
+td,
+input,
+textarea,
+select {
+  border-color: var(--line);
+}
+
+.list-box,
+.output {
+  background: var(--panel-2);
+}
+
+input,
+textarea,
+select {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.btn-primary {
+  background: linear-gradient(90deg, #3f86f4 0%, #5da3ff 100%);
+}
+
+.btn-secondary {
+  background: #2d466f;
 }
 
 @media (max-width: 1120px) {
@@ -110,7 +197,9 @@ h3 {
   .sidebar {
     position: static;
     height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .main-header {
+    min-height: auto;
   }
 }
