@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
 from app.services.domain_checker import infer_status
-from app.services.llm_nlu import detect_intent_with_llm
+from app.services.llm_nlu import detect_intent_with_llm, generate_chat_reply_with_llm
 from app.services.domain_scoring import score_domain
 from app.services.timeweb_api import TimewebApiClient
 from app.state import store
@@ -654,6 +654,36 @@ async def process_copilot_message(
         )
 
     reply = _assistant_text_for_intent_lang(intent, entities, lang)
+    reply_style = "template"
+    answer_source = "template"
+    context_used = 0
+    trim_reason = None
+    if intent in {"help", "qa", "chat"} and settings.copilot_llm_nlu_enabled:
+        history_limit = max(2, int(settings.copilot_llm_chat_context_messages))
+        history = store.list_conversation_messages(
+            conversation_id=conversation_id,
+            telegram_user_id=user_id,
+            limit=history_limit,
+        )
+        context_used = len(history)
+        try:
+            llm_reply = await generate_chat_reply_with_llm(
+                message=message_text,
+                intent=intent,
+                lang=lang,
+                history=history,
+            )
+            if llm_reply and llm_reply.reply:
+                reply = llm_reply.reply
+                reply_style = "natural"
+                answer_source = f"llm:{llm_reply.provider}"
+                trim_reason = llm_reply.trim_reason
+            else:
+                answer_source = "template_llm_empty"
+        except Exception as exc:
+            answer_source = "template_llm_failed"
+            trim_reason = str(exc)[:160]
+
     store.log_conversation_message(
         conversation_id=conversation_id,
         telegram_user_id=user_id,
@@ -661,13 +691,26 @@ async def process_copilot_message(
         message_text=reply,
         intent=intent,
         confidence=confidence,
-        raw_payload={"mode": mode},
+        raw_payload={
+            "mode": mode,
+            "reply_style": reply_style,
+            "answer_source": answer_source,
+            "context_used": context_used,
+            "trim_reason": trim_reason,
+        },
     )
     store.log_copilot_event(
         event_type="assistant_reply",
         telegram_user_id=user_id,
         conversation_id=conversation_id,
-        payload={"intent": intent, "confidence": confidence},
+        payload={
+            "intent": intent,
+            "confidence": confidence,
+            "reply_style": reply_style,
+            "answer_source": answer_source,
+            "context_used": context_used,
+            "trim_reason": trim_reason,
+        },
     )
     return CopilotMessageResponse(
         conversation_id=conversation_id,

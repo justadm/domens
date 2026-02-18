@@ -46,6 +46,8 @@ COPILOT_LLM_NLU_ENABLED=true
 COPILOT_LLM_PROVIDER=ollama
 COPILOT_LLM_TIMEOUT_SECONDS=12
 COPILOT_LLM_CONFIDENCE_THRESHOLD=0.65
+COPILOT_LLM_CHAT_CONTEXT_MESSAGES=5
+COPILOT_LLM_REPLY_MAX_CHARS=700
 COPILOT_LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
 COPILOT_LLM_OLLAMA_MODEL=qwen2.5:0.5b
 
@@ -77,6 +79,7 @@ Every Copilot message logs:
 - selected source (`llm` or fallback variant),
 - LLM provider/model/confidence metadata,
 - final intent/entities used for backend decision.
+- conversational answer metadata (`reply_style`, `answer_source`, `context_used`, `trim_reason`).
 
 ## Model profile
 - Low RAM MVP: `qwen2.5:0.5b`.

@@ -117,6 +117,8 @@ make down
   - `COPILOT_LLM_NLU_ENABLED`
   - `COPILOT_LLM_PROVIDER`
   - `COPILOT_LLM_CONFIDENCE_THRESHOLD`
+  - `COPILOT_LLM_CHAT_CONTEXT_MESSAGES`
+  - `COPILOT_LLM_REPLY_MAX_CHARS`
   - см. `docs/llm_nlu_runbook.md`
   - важно: использовать только один shared runtime Ollama на сервере (host/systemd или docker), см. `docs/shared_ollama_multi_project.md`
   - профиль модели для MVP low-RAM: `qwen2.5:0.5b` (высокое качество: `qwen2.5:7b-instruct`)

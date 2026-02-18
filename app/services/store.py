@@ -1563,6 +1563,45 @@ class PostgresStore:
             session.refresh(item)
             return str(item.id)
 
+    def list_conversation_messages(
+        self,
+        conversation_id: str,
+        telegram_user_id: str | None = None,
+        limit: int = 5,
+    ) -> list[dict]:
+        try:
+            cid = uuid.UUID(str(conversation_id).strip())
+        except ValueError:
+            return []
+        safe_limit = max(1, min(50, int(limit)))
+        with self._session() as session:
+            conversation = session.execute(
+                select(ConversationModel).where(ConversationModel.id == cid).limit(1)
+            ).scalar_one_or_none()
+            if not conversation:
+                return []
+            if telegram_user_id and str(conversation.telegram_user_id).strip() != str(telegram_user_id).strip():
+                return []
+
+            rows = session.execute(
+                select(ConversationMessageModel)
+                .where(ConversationMessageModel.conversation_id == cid)
+                .order_by(desc(ConversationMessageModel.created_at))
+                .limit(safe_limit)
+            ).scalars().all()
+            items = list(reversed(rows))
+            return [
+                {
+                    "id": str(item.id),
+                    "direction": item.direction,
+                    "message_text": item.message_text,
+                    "intent": item.intent,
+                    "confidence": float(item.confidence) if item.confidence is not None else None,
+                    "created_at": item.created_at.isoformat(),
+                }
+                for item in items
+            ]
+
     def create_copilot_confirmation(
         self,
         telegram_user_id: str,

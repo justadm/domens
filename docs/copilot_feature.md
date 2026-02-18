@@ -49,12 +49,15 @@ Parity channels:
 - Expected model output is strict JSON (`intent`, `confidence`, `entities`).
 - If model confidence is below threshold or provider fails, parser falls back to current rule-based intent detection.
 - Even with LLM enabled, mutating actions still require explicit confirmation token.
+- For `help|qa|chat`, optional conversational reply generation is enabled via the same LLM stack with short context window.
 
 Env flags:
 - `COPILOT_LLM_NLU_ENABLED` - enable/disable LLM NLU layer.
 - `COPILOT_LLM_PROVIDER` - `ollama` or `openrouter`.
 - `COPILOT_LLM_TIMEOUT_SECONDS` - timeout for model call.
 - `COPILOT_LLM_CONFIDENCE_THRESHOLD` - minimum confidence to trust LLM output.
+- `COPILOT_LLM_CHAT_CONTEXT_MESSAGES` - recent messages count used for conversational replies.
+- `COPILOT_LLM_REPLY_MAX_CHARS` - max response length before trimming.
 - `COPILOT_LLM_OLLAMA_BASE_URL`, `COPILOT_LLM_OLLAMA_MODEL` - local Ollama settings.
 - `COPILOT_LLM_FALLBACK_ENABLED` - enable provider fallback.
 - `COPILOT_LLM_FALLBACK_BASE_URL`, `COPILOT_LLM_FALLBACK_API_KEY`, `COPILOT_LLM_FALLBACK_MODEL` - fallback provider settings.
@@ -70,6 +73,11 @@ All copilot steps are persisted:
 - assistant response,
 - confirmation request/decision,
 - action execution result/failure.
+- conversational metadata:
+  - `reply_style` (`natural|template`)
+  - `answer_source` (`llm:*|template*`)
+  - `context_used` (history messages count)
+  - `trim_reason` (if response was shortened)
 
 DB tables:
 - `conversations`

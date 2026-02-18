@@ -42,6 +42,14 @@ class LlmNluResult:
     model: str
 
 
+@dataclass
+class LlmReplyResult:
+    reply: str
+    provider: str
+    model: str
+    trim_reason: str | None = None
+
+
 def _clip(value: str, size: int) -> str:
     return str(value or "").strip()[:size]
 
@@ -158,6 +166,49 @@ def _build_prompt(message: str, mode: str, lang: str) -> str:
     )
 
 
+def _clean_reply_text(text: str) -> str:
+    value = str(text or "").strip()
+    if value.startswith("```"):
+        value = re.sub(r"^```(?:json|text)?", "", value).strip()
+        value = re.sub(r"```$", "", value).strip()
+    return re.sub(r"\n{3,}", "\n\n", value).strip()
+
+
+def _trim_reply_text(text: str, max_chars: int) -> tuple[str, str | None]:
+    safe_limit = max(120, int(max_chars))
+    value = _clean_reply_text(text)
+    if len(value) <= safe_limit:
+        return value, None
+    trimmed = value[: safe_limit - 1].rstrip()
+    return trimmed + "…", "max_chars"
+
+
+def _build_chat_prompt(message: str, intent: str, lang: str, history: list[dict]) -> str:
+    max_chars = max(120, int(settings.copilot_llm_reply_max_chars))
+    lines = []
+    for item in history[-8:]:
+        direction = "user" if str(item.get("direction")) == "user" else "assistant"
+        text = _clip(item.get("message_text") or "", 240)
+        if text:
+            lines.append(f"{direction}: {text}")
+    history_block = "\n".join(lines) if lines else "(empty)"
+
+    return (
+        "You are an assistant for domain monitoring and registration service.\n"
+        "Answer naturally and briefly in user's language.\n"
+        "Do not invent executed actions. For mutating actions mention confirmation is required.\n"
+        "If request is unclear, ask one short clarifying question.\n"
+        f"Intent hint: {intent}\n"
+        f"User language: {lang}\n"
+        f"Max answer length: {max_chars} chars\n"
+        "Recent context:\n"
+        f"{history_block}\n"
+        "User message:\n"
+        f"{message}\n"
+        "Return plain text only."
+    )
+
+
 async def _call_ollama(message: str, mode: str, lang: str) -> LlmNluResult | None:
     url = settings.copilot_llm_ollama_base_url.rstrip("/") + "/api/generate"
     payload = {
@@ -227,6 +278,66 @@ async def _call_openrouter(message: str, mode: str, lang: str) -> LlmNluResult |
     )
 
 
+async def _generate_reply_ollama(message: str, intent: str, lang: str, history: list[dict]) -> LlmReplyResult | None:
+    url = settings.copilot_llm_ollama_base_url.rstrip("/") + "/api/generate"
+    payload = {
+        "model": settings.copilot_llm_ollama_model,
+        "prompt": _build_chat_prompt(message=message, intent=intent, lang=lang, history=history),
+        "stream": False,
+    }
+    timeout = max(3, int(settings.copilot_llm_timeout_seconds))
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        body = response.json()
+    reply = str(body.get("response") or "").strip()
+    if not reply:
+        return None
+    text, trim_reason = _trim_reply_text(reply, settings.copilot_llm_reply_max_chars)
+    return LlmReplyResult(
+        reply=text,
+        provider="ollama",
+        model=settings.copilot_llm_ollama_model,
+        trim_reason=trim_reason,
+    )
+
+
+async def _generate_reply_openrouter(message: str, intent: str, lang: str, history: list[dict]) -> LlmReplyResult | None:
+    if not settings.copilot_llm_fallback_api_key:
+        return None
+    url = settings.copilot_llm_fallback_base_url.rstrip("/") + "/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.copilot_llm_fallback_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.copilot_llm_fallback_model,
+        "messages": [
+            {"role": "system", "content": "You are concise assistant. Return plain text only."},
+            {"role": "user", "content": _build_chat_prompt(message=message, intent=intent, lang=lang, history=history)},
+        ],
+        "temperature": 0.25,
+    }
+    timeout = max(3, int(settings.copilot_llm_timeout_seconds))
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        body = response.json()
+    choices = body.get("choices") if isinstance(body, dict) else None
+    content = ""
+    if isinstance(choices, list) and choices:
+        content = str(((choices[0] or {}).get("message") or {}).get("content") or "")
+    if not content.strip():
+        return None
+    text, trim_reason = _trim_reply_text(content, settings.copilot_llm_reply_max_chars)
+    return LlmReplyResult(
+        reply=text,
+        provider="openrouter",
+        model=settings.copilot_llm_fallback_model,
+        trim_reason=trim_reason,
+    )
+
+
 async def detect_intent_with_llm(message: str, mode: str, lang: str) -> LlmNluResult | None:
     if not settings.copilot_llm_nlu_enabled:
         return None
@@ -246,6 +357,36 @@ async def detect_intent_with_llm(message: str, mode: str, lang: str) -> LlmNluRe
             return result
         if settings.copilot_llm_fallback_enabled:
             return await _call_ollama(message=message, mode=mode, lang=lang)
+        return None
+
+    return None
+
+
+async def generate_chat_reply_with_llm(
+    message: str,
+    intent: str,
+    lang: str,
+    history: list[dict] | None = None,
+) -> LlmReplyResult | None:
+    if not settings.copilot_llm_nlu_enabled:
+        return None
+
+    context = history or []
+    provider = str(settings.copilot_llm_provider or "ollama").strip().lower()
+    if provider == "ollama":
+        result = await _generate_reply_ollama(message=message, intent=intent, lang=lang, history=context)
+        if result:
+            return result
+        if settings.copilot_llm_fallback_enabled:
+            return await _generate_reply_openrouter(message=message, intent=intent, lang=lang, history=context)
+        return None
+
+    if provider == "openrouter":
+        result = await _generate_reply_openrouter(message=message, intent=intent, lang=lang, history=context)
+        if result:
+            return result
+        if settings.copilot_llm_fallback_enabled:
+            return await _generate_reply_ollama(message=message, intent=intent, lang=lang, history=context)
         return None
 
     return None

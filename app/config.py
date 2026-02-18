@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     copilot_llm_provider: str = "ollama"
     copilot_llm_timeout_seconds: int = 12
     copilot_llm_confidence_threshold: float = 0.65
+    copilot_llm_chat_context_messages: int = 5
+    copilot_llm_reply_max_chars: int = 700
     copilot_llm_ollama_base_url: str = "http://localhost:11434"
     copilot_llm_ollama_model: str = "qwen2.5:7b-instruct"
     copilot_llm_fallback_enabled: bool = False
