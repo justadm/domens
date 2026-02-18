@@ -439,7 +439,10 @@ function renderCopilotOutput(payload) {
 
 async function sendCopilot(mode) {
   if (!authState.authenticated || !authState.user) {
-    setCabinetMessage(I18N[currentLang].cabinet_login_required);
+    renderCopilotOutput({
+      error: I18N[currentLang].cabinet_login_required,
+      hint: "Use Telegram/MAX login first",
+    });
     return;
   }
   const input = document.getElementById("copilot-input");
@@ -468,7 +471,10 @@ async function sendCopilot(mode) {
 async function resolveCopilot(decision) {
   const tokenInput = document.getElementById("copilot-confirm-token");
   const token = (tokenInput?.value || copilotPendingToken || "").trim();
-  if (!token) return;
+  if (!token) {
+    renderCopilotOutput({ error: "confirmation_token is required" });
+    return;
+  }
   try {
     const data = await api("/v1/copilot/confirm", {
       method: "POST",
