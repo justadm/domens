@@ -76,6 +76,8 @@ def _t(lang: str, key: str) -> str:
         "domain_missing": "Не вижу домен в запросе. Пример: `проверь freebrand.com`.",
         "domain_suggest_missing": "Уточните тематику. Пример: `подбери домен для fintech в зоне .ai,.ru`.",
         "domain_suggest_header": "Подбор кандидатов:",
+        "domain_suggest_mode_available_only": "Режим: только свободные/освобождающиеся.",
+        "domain_suggest_mode_prioritized": "Режим: все с приоритетом по доступности.",
         "action_done": "Действие выполнено.",
         "action_canceled": "Действие отменено.",
         "token_expired": "Срок подтверждения истек.",
@@ -96,6 +98,8 @@ def _t(lang: str, key: str) -> str:
         "domain_missing": "No domain detected. Example: `check freebrand.com`.",
         "domain_suggest_missing": "Please specify the topic. Example: `suggest domains for fintech in .ai,.ru`.",
         "domain_suggest_header": "Candidate shortlist:",
+        "domain_suggest_mode_available_only": "Mode: only free/releasing domains.",
+        "domain_suggest_mode_prioritized": "Mode: all with availability priority.",
         "action_done": "Action executed.",
         "action_canceled": "Action canceled.",
         "token_expired": "Confirmation token has expired.",
@@ -265,6 +269,29 @@ def _build_suggest_seeds(normalized_query: str) -> list[str]:
     return unique[:12]
 
 
+def _extract_suggest_mode(raw: str) -> str:
+    lowered = str(raw or "").lower()
+    available_only_markers = [
+        "только свобод",
+        "only available",
+        "only free",
+        "free only",
+        "only releasing",
+        "только доступ",
+    ]
+    prioritized_markers = [
+        "все с приоритетом",
+        "all prioritized",
+        "all with priority",
+        "все варианты",
+    ]
+    if any(marker in lowered for marker in available_only_markers):
+        return "available_only"
+    if any(marker in lowered for marker in prioritized_markers):
+        return "prioritized"
+    return "prioritized"
+
+
 def _extract_suggest_query(raw: str) -> str:
     compact = str(raw or "")
     for marker in [
@@ -315,6 +342,7 @@ def _detect_intent(text: str, mode: str) -> tuple[str, float, dict]:
     if any(word in lowered for word in ["подбери", "подобрать", "подбор", "предложи дом", "suggest domain", "find domain"]):
         entities["query"] = _extract_suggest_query(raw)
         entities["tlds"] = _extract_requested_tlds(raw)
+        entities["suggest_mode"] = _extract_suggest_mode(raw)
         return "domain_suggest", 0.86, entities
 
     if domain and any(word in lowered for word in ["проверь", "status", "свобод", "занят"]):
@@ -496,6 +524,7 @@ async def process_copilot_message(
         tlds = entities.get("tlds") or []
         if not tlds:
             tlds = _parse_tlds_from_settings(settings.monitor_tlds)[:6] or [".com", ".io", ".ai", ".ru"]
+        suggest_mode = str(entities.get("suggest_mode") or "prioritized").strip().lower()
 
         seeds = _build_suggest_seeds(normalized_query)
         candidates = [f"{seed}{tld}" for seed in seeds for tld in tlds][:48]
@@ -513,22 +542,27 @@ async def process_copilot_message(
                 }
 
         rows = await asyncio.gather(*(check_one(name) for name in candidates))
-        available_rows = [item for item in rows if str(item.get("status")) in {"available", "pending_delete", "redemption", "client_hold"}]
-        fallback_rows = rows if len(available_rows) < 8 else available_rows
-        fallback_rows.sort(key=lambda item: _domains_suggest_rank(item, query_terms))
-        top = fallback_rows[:8]
+        actionable_rows = [item for item in rows if str(item.get("status")) in {"available", "pending_delete", "redemption", "client_hold"}]
+        if suggest_mode == "available_only":
+            picked_rows = actionable_rows
+        else:
+            picked_rows = rows if len(actionable_rows) < 8 else actionable_rows
+        picked_rows.sort(key=lambda item: _domains_suggest_rank(item, query_terms))
+        top = picked_rows[:8]
 
         lines = [
             f"{item['domain']} | {item['status']} | score {item['score']}"
             + (f" | eta {item['eta']}" if item["eta"] else "")
             for item in top
         ]
-        reply = _t(lang, "domain_suggest_header") + "\n" + "\n".join(lines)
+        mode_text = _t(lang, "domain_suggest_mode_available_only") if suggest_mode == "available_only" else _t(lang, "domain_suggest_mode_prioritized")
+        body = "\n".join(lines) if lines else "-"
+        reply = _t(lang, "domain_suggest_header") + "\n" + mode_text + "\n" + body
         store.log_copilot_event(
             event_type="domain_suggest_result",
             telegram_user_id=user_id,
             conversation_id=conversation_id,
-            payload={"query": normalized_query, "tlds": tlds, "count": len(top)},
+            payload={"query": normalized_query, "tlds": tlds, "count": len(top), "suggest_mode": suggest_mode},
         )
         store.log_conversation_message(
             conversation_id=conversation_id,
@@ -537,7 +571,7 @@ async def process_copilot_message(
             message_text=reply,
             intent=intent,
             confidence=confidence,
-            raw_payload={"query": normalized_query, "tlds": tlds, "top": top},
+            raw_payload={"query": normalized_query, "tlds": tlds, "top": top, "suggest_mode": suggest_mode},
         )
         return CopilotMessageResponse(
             conversation_id=conversation_id,

@@ -40,6 +40,9 @@ Parity channels:
 - `register_domain` -> create+execute registration flow (requires confirm)
 - `domain_check` -> status check with provider inference (no confirm)
 - `domain_suggest` -> generate candidate names by topic+TLD, filter noisy names, prioritize actionable statuses (`available/pending_delete/redemption/client_hold`) before reply (no confirm)
+  - Supports explicit mode in prompt:
+    - `только свободные` / `only available` -> return only actionable statuses
+    - `все с приоритетом` / `all with priority` -> include fallback but rank actionable first
 - `help|qa|chat` -> conversational answer (no confirm)
 
 ## Language handling
