@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.state import store
@@ -39,7 +39,9 @@ class AuthUserResponse(BaseModel):
     username: str | None = None
     first_name: str | None = None
     locale: str | None = None
-    roles: list[str] = []
+    roles: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
     is_admin: bool = False
 
 
@@ -171,14 +173,18 @@ def _get_current_user(request: Request) -> AuthUserResponse | None:
         return None
 
     roles = store.list_user_role_codes(user.telegram_user_id)
+    permissions = store.list_user_permissions(user.telegram_user_id)
+    capabilities = store.list_user_capabilities(user.telegram_user_id)
     env_admins = {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
-    is_admin = "admin" in roles or "superadmin" in roles or user.telegram_user_id in env_admins
+    is_admin = bool(capabilities.get("admin_panel_read")) or user.telegram_user_id in env_admins
     return AuthUserResponse(
         telegram_user_id=user.telegram_user_id,
         username=user.username,
         first_name=user.first_name,
         locale=user.locale,
         roles=roles,
+        permissions=permissions,
+        capabilities=capabilities,
         is_admin=is_admin,
     )
 
@@ -203,14 +209,18 @@ def _get_guest_user() -> AuthUserResponse | None:
             store.grant_role(user.telegram_user_id, "admin", granted_by="web_guest_auth")
             roles = store.list_user_role_codes(user.telegram_user_id)
 
+    permissions = store.list_user_permissions(user.telegram_user_id)
+    capabilities = store.list_user_capabilities(user.telegram_user_id)
     env_admins = {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
-    is_admin = settings.web_guest_is_admin or "admin" in roles or "superadmin" in roles or user.telegram_user_id in env_admins
+    is_admin = settings.web_guest_is_admin or bool(capabilities.get("admin_panel_read")) or user.telegram_user_id in env_admins
     return AuthUserResponse(
         telegram_user_id=user.telegram_user_id,
         username=user.username,
         first_name=user.first_name,
         locale=user.locale,
         roles=roles,
+        permissions=permissions,
+        capabilities=capabilities,
         is_admin=is_admin,
     )
 
@@ -298,6 +308,7 @@ async def telegram_login(payload: TelegramLoginRequest, request: Request, respon
         secure=_cookie_secure(request),
         path="/",
     )
+    store.log_bot_event("auth_telegram_login", telegram_user_id=user.telegram_user_id, payload={"provider": "telegram"})
 
     return AuthSessionResponse(
         authenticated=True,
@@ -307,9 +318,10 @@ async def telegram_login(payload: TelegramLoginRequest, request: Request, respon
             first_name=user.first_name,
             locale=user.locale,
             roles=store.list_user_role_codes(user.telegram_user_id),
-            is_admin=bool(
-                user.telegram_user_id in {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
-            ),
+            permissions=store.list_user_permissions(user.telegram_user_id),
+            capabilities=store.list_user_capabilities(user.telegram_user_id),
+            is_admin=bool(store.has_permission(user.telegram_user_id, "admin.panel.read"))
+            or bool(user.telegram_user_id in {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}),
         ),
     )
 
@@ -396,6 +408,7 @@ async def auth_me(request: Request) -> AuthSessionResponse:
     user = get_authenticated_user(request)
     if not user:
         return AuthSessionResponse(authenticated=False)
+    store.log_bot_event("auth_web_me", telegram_user_id=user.telegram_user_id, payload={"channel": "web"})
     return AuthSessionResponse(authenticated=True, user=user)
 
 

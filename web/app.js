@@ -64,7 +64,18 @@ const I18N = {
     cabinet_admin: "Админ",
     cabinet_admin_refresh: "Обновить админ",
     cabinet_admin_search: "Поиск пользователей",
+    cabinet_admin_permission_search: "Permission contains",
+    cabinet_admin_registered_only: "Только зарегистрированные",
     cabinet_admin_limit: "Лимит",
+    cabinet_admin_users_activity: "Пользователи и регистрации",
+    cabinet_admin_events: "Все события",
+    cabinet_admin_events_type: "Тип события",
+    cabinet_admin_events_user: "User ID",
+    cabinet_admin_events_chat: "Chat ID",
+    cabinet_admin_events_search: "Поиск по payload",
+    cabinet_admin_events_from: "С",
+    cabinet_admin_events_to: "По",
+    cabinet_admin_events_limit: "Лимит",
     cabinet_admin_target: "User ID",
     cabinet_admin_role: "Роль",
     cabinet_admin_grant: "Выдать роль",
@@ -156,7 +167,18 @@ const I18N = {
     cabinet_admin: "Admin",
     cabinet_admin_refresh: "Refresh admin",
     cabinet_admin_search: "Search users",
+    cabinet_admin_permission_search: "Permission contains",
+    cabinet_admin_registered_only: "Registered only",
     cabinet_admin_limit: "Limit",
+    cabinet_admin_users_activity: "Users and registrations",
+    cabinet_admin_events: "All events",
+    cabinet_admin_events_type: "Event type",
+    cabinet_admin_events_user: "User ID",
+    cabinet_admin_events_chat: "Chat ID",
+    cabinet_admin_events_search: "Search payload",
+    cabinet_admin_events_from: "From",
+    cabinet_admin_events_to: "To",
+    cabinet_admin_events_limit: "Limit",
     cabinet_admin_target: "User ID",
     cabinet_admin_role: "Role",
     cabinet_admin_grant: "Grant role",
@@ -197,6 +219,7 @@ let cabinetState = {
   history: [],
   adminUsers: [],
   roles: [],
+  adminEvents: { items: [], total: 0, limit: 50, offset: 0, next_offset: null, prev_offset: null },
   accessAudit: { items: [], total: 0, limit: 50, offset: 0, next_offset: null, prev_offset: null },
 };
 let cabinetRefreshTimer = null;
@@ -204,6 +227,7 @@ let copilotConversationId = "";
 let copilotPendingToken = "";
 let copilotSendInFlight = false;
 let cabinetAccessOffset = 0;
+let cabinetEventsOffset = 0;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -569,6 +593,8 @@ function renderCabinetProfile(data) {
     ["watch_rules_active", String(data.watch_rules_active || 0)],
     ["is_admin", data.is_admin ? "true" : "false"],
     ["roles", (data.roles || []).join(", ") || "-"],
+    ["permissions", (data.permissions || []).join(", ") || "-"],
+    ["capabilities", JSON.stringify(data.capabilities || {})],
   ];
   root.innerHTML = rows
     .map(
@@ -599,7 +625,9 @@ function renderCabinetAdmin(users, roles) {
   const root = document.getElementById("cabinet-admin-users");
   const card = document.getElementById("cabinet-admin-card");
   if (!root || !card) return;
-  const isAdmin = Boolean(authState?.user?.is_admin);
+  const isAdmin = Boolean(
+    cabinetState?.profile?.capabilities?.admin_panel_read ?? authState?.user?.capabilities?.admin_panel_read ?? authState?.user?.is_admin,
+  );
   if (!isAdmin) {
     card.classList.add("hidden");
     root.innerHTML = "";
@@ -630,8 +658,76 @@ function renderCabinetAdmin(users, roles) {
         </div>
         <div class="feed-row">
           <span>${escapeHtml(item.username ? `@${item.username}` : item.first_name || "-")}</span>
-          <time>${formatDate(item.updated_at)}</time>
+          <time>${formatDate(item.last_event_at || item.updated_at)}</time>
         </div>
+        <div class="feed-row">
+          <span>${escapeHtml(`registered: ${item.is_registered ? "yes" : "no"} | events: ${item.events_total ?? 0}`)}</span>
+          <span>${escapeHtml(`perm: ${(item.permissions || []).join(", ") || "-"}`)}</span>
+        </div>
+        <div class="feed-row">
+          <span>${escapeHtml(`cap: ${JSON.stringify(item.capabilities || {})}`)}</span>
+          <span>${escapeHtml(`disclaimer: ${item.disclaimer_accepted_at ? "accepted" : "pending"}`)}</span>
+        </div>
+      </article>
+    `,
+    )
+    .join("");
+}
+
+function renderCabinetAdminEvents(audit) {
+  const root = document.getElementById("cabinet-admin-events");
+  const card = document.getElementById("cabinet-admin-card");
+  const pageInfo = document.getElementById("cabinet-admin-events-page-info");
+  const prevBtn = document.getElementById("cabinet-admin-events-prev-btn");
+  const nextBtn = document.getElementById("cabinet-admin-events-next-btn");
+  if (!root || !card) return;
+  const isAdmin = Boolean(
+    cabinetState?.profile?.capabilities?.admin_panel_read ?? authState?.user?.capabilities?.admin_panel_read ?? authState?.user?.is_admin,
+  );
+  if (!isAdmin) {
+    root.innerHTML = "";
+    if (pageInfo) pageInfo.textContent = "";
+    return;
+  }
+  const items = audit?.items || [];
+  const total = Number(audit?.total || 0);
+  const offset = Number(audit?.offset || 0);
+  const limit = Number(audit?.limit || items.length || 1);
+  const nextOffset = audit?.next_offset;
+  const prevOffset = audit?.prev_offset;
+
+  if (prevBtn) prevBtn.disabled = prevOffset === null || prevOffset === undefined;
+  if (nextBtn) nextBtn.disabled = nextOffset === null || nextOffset === undefined;
+  if (pageInfo) {
+    if (!total) {
+      pageInfo.textContent = I18N[currentLang].cabinet_empty;
+    } else {
+      const from = offset + 1;
+      const to = Math.min(offset + Math.max(1, limit), total);
+      pageInfo.textContent = I18N[currentLang].cabinet_admin_access_page
+        .replace("{from}", String(from))
+        .replace("{to}", String(to))
+        .replace("{total}", String(total));
+    }
+  }
+
+  if (!items.length) {
+    root.innerHTML = `<p class="feed-empty">${I18N[currentLang].cabinet_empty}</p>`;
+    return;
+  }
+  root.innerHTML = items
+    .map(
+      (item) => `
+      <article class="list-row">
+        <div class="feed-row">
+          <strong>${escapeHtml(item.event_type || "-")}</strong>
+          <span class="feed-status">${escapeHtml(item.telegram_user_id || "-")}</span>
+        </div>
+        <div class="feed-row">
+          <span>${escapeHtml((item.username ? `@${item.username}` : "-") + " | " + (item.telegram_chat_id || "-"))}</span>
+          <time>${formatDate(item.created_at)}</time>
+        </div>
+        <pre class="output">${escapeHtml(JSON.stringify(item.payload || {}, null, 2))}</pre>
       </article>
     `,
     )
@@ -645,7 +741,9 @@ function renderCabinetAccessEvents(audit) {
   const prevBtn = document.getElementById("cabinet-admin-access-prev-btn");
   const nextBtn = document.getElementById("cabinet-admin-access-next-btn");
   if (!root || !card) return;
-  const isAdmin = Boolean(authState?.user?.is_admin);
+  const isAdmin = Boolean(
+    cabinetState?.profile?.capabilities?.admin_panel_read ?? authState?.user?.capabilities?.admin_panel_read ?? authState?.user?.is_admin,
+  );
   if (!isAdmin) {
     root.innerHTML = "";
     if (pageInfo) pageInfo.textContent = "";
@@ -812,6 +910,8 @@ async function refreshCabinet() {
     const historyUrl = `/v1/cabinet/history?${historyParams.toString()}`;
 
     const adminSearch = (document.getElementById("cabinet-admin-search")?.value || "").trim();
+    const adminPermissionSearch = (document.getElementById("cabinet-admin-permission-search")?.value || "").trim();
+    const adminRegisteredOnly = (document.getElementById("cabinet-admin-registered-only")?.value || "false") === "true";
     const adminLimitRaw = Number(document.getElementById("cabinet-admin-limit")?.value || 50);
     const adminLimit = Number.isFinite(adminLimitRaw) ? Math.max(1, Math.min(200, adminLimitRaw)) : 50;
 
@@ -824,10 +924,30 @@ async function refreshCabinet() {
 
     let adminUsers = [];
     let roles = [];
+    let adminEvents = { items: [], total: 0, limit: 50, offset: cabinetEventsOffset, next_offset: null, prev_offset: null };
     let accessAudit = { items: [], total: 0, limit: 50, offset: cabinetAccessOffset, next_offset: null, prev_offset: null };
-    if (profile.is_admin) {
-      const usersParams = new URLSearchParams({ limit: String(adminLimit) });
+    if (profile?.capabilities?.admin_panel_read || profile.is_admin) {
+      const usersParams = new URLSearchParams({ limit: String(adminLimit), offset: "0" });
       if (adminSearch) usersParams.set("search", adminSearch);
+      if (adminPermissionSearch) usersParams.set("permission_contains", adminPermissionSearch);
+      if (adminRegisteredOnly) usersParams.set("registered_only", "true");
+
+      const eventsType = (document.getElementById("cabinet-admin-events-type")?.value || "").trim();
+      const eventsUser = (document.getElementById("cabinet-admin-events-user")?.value || "").trim();
+      const eventsChat = (document.getElementById("cabinet-admin-events-chat")?.value || "").trim();
+      const eventsSearch = (document.getElementById("cabinet-admin-events-search")?.value || "").trim();
+      const eventsFrom = (document.getElementById("cabinet-admin-events-from")?.value || "").trim();
+      const eventsTo = (document.getElementById("cabinet-admin-events-to")?.value || "").trim();
+      const eventsLimitRaw = Number(document.getElementById("cabinet-admin-events-limit")?.value || 50);
+      const eventsLimit = Number.isFinite(eventsLimitRaw) ? Math.max(1, Math.min(300, eventsLimitRaw)) : 50;
+      const eventsParams = new URLSearchParams({ limit: String(eventsLimit), offset: String(cabinetEventsOffset) });
+      if (eventsType) eventsParams.set("event_type", eventsType);
+      if (eventsUser) eventsParams.set("telegram_user_id", eventsUser);
+      if (eventsChat) eventsParams.set("telegram_chat_id", eventsChat);
+      if (eventsSearch) eventsParams.set("search", eventsSearch);
+      if (eventsFrom) eventsParams.set("created_from", new Date(eventsFrom).toISOString());
+      if (eventsTo) eventsParams.set("created_to", new Date(eventsTo).toISOString());
+
       const accessAction = (document.getElementById("cabinet-admin-access-action")?.value || "").trim();
       const accessActor = (document.getElementById("cabinet-admin-access-actor")?.value || "").trim();
       const accessTarget = (document.getElementById("cabinet-admin-access-target")?.value || "").trim();
@@ -842,10 +962,11 @@ async function refreshCabinet() {
       if (accessFrom) accessParams.set("created_from", new Date(accessFrom).toISOString());
       if (accessTo) accessParams.set("created_to", new Date(accessTo).toISOString());
 
-      const [usersResp, rolesResp, accessResp] = await Promise.all([
-        api(`/v1/admin/users?${usersParams.toString()}`),
+      const [usersResp, rolesResp, accessResp, eventsResp] = await Promise.all([
+        api(`/v1/admin/users-activity?${usersParams.toString()}`),
         api("/v1/admin/roles"),
         api(`/v1/admin/access-events?${accessParams.toString()}`),
+        api(`/v1/admin/bot-events?${eventsParams.toString()}`),
       ]);
       adminUsers = usersResp.items || [];
       roles = rolesResp.items || [];
@@ -858,6 +979,15 @@ async function refreshCabinet() {
         prev_offset: accessResp.prev_offset ?? null,
       };
       cabinetAccessOffset = accessAudit.offset;
+      adminEvents = {
+        items: eventsResp.items || [],
+        total: Number(eventsResp.total || 0),
+        limit: Number(eventsResp.limit || eventsLimit),
+        offset: Number(eventsResp.offset || 0),
+        next_offset: eventsResp.next_offset ?? null,
+        prev_offset: eventsResp.prev_offset ?? null,
+      };
+      cabinetEventsOffset = adminEvents.offset;
     }
 
     cabinetState = {
@@ -867,6 +997,7 @@ async function refreshCabinet() {
       history: history.items || [],
       adminUsers,
       roles,
+      adminEvents,
       accessAudit,
     };
     renderCabinetProfile(profile);
@@ -874,6 +1005,7 @@ async function refreshCabinet() {
     renderCabinetWatchRules(cabinetState.watchRules);
     renderCabinetHistory(cabinetState.history);
     renderCabinetAdmin(cabinetState.adminUsers, cabinetState.roles);
+    renderCabinetAdminEvents(cabinetState.adminEvents);
     renderCabinetAccessEvents(cabinetState.accessAudit);
   } catch (err) {
     setCabinetMessage(String(err));
@@ -1281,8 +1413,80 @@ document.getElementById("cabinet-admin-search").addEventListener("input", () => 
   }, 300);
 });
 
+document.getElementById("cabinet-admin-permission-search").addEventListener("input", () => {
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 350);
+});
+
+document.getElementById("cabinet-admin-registered-only").addEventListener("change", () => {
+  refreshCabinet();
+});
+
 document.getElementById("cabinet-admin-limit").addEventListener("change", () => {
   refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-events-type").addEventListener("input", () => {
+  cabinetEventsOffset = 0;
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-events-user").addEventListener("input", () => {
+  cabinetEventsOffset = 0;
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-events-chat").addEventListener("input", () => {
+  cabinetEventsOffset = 0;
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-events-search").addEventListener("input", () => {
+  cabinetEventsOffset = 0;
+  if (cabinetRefreshTimer) clearTimeout(cabinetRefreshTimer);
+  cabinetRefreshTimer = setTimeout(() => {
+    refreshCabinet();
+  }, 450);
+});
+
+document.getElementById("cabinet-admin-events-from").addEventListener("change", () => {
+  cabinetEventsOffset = 0;
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-events-to").addEventListener("change", () => {
+  cabinetEventsOffset = 0;
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-events-limit").addEventListener("change", () => {
+  cabinetEventsOffset = 0;
+  refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-events-prev-btn").addEventListener("click", async () => {
+  const prevOffset = cabinetState?.adminEvents?.prev_offset;
+  if (prevOffset === null || prevOffset === undefined) return;
+  cabinetEventsOffset = Number(prevOffset) || 0;
+  await refreshCabinet();
+});
+
+document.getElementById("cabinet-admin-events-next-btn").addEventListener("click", async () => {
+  const nextOffset = cabinetState?.adminEvents?.next_offset;
+  if (nextOffset === null || nextOffset === undefined) return;
+  cabinetEventsOffset = Number(nextOffset) || 0;
+  await refreshCabinet();
 });
 
 document.getElementById("cabinet-admin-access-action").addEventListener("input", () => {

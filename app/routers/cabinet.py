@@ -51,7 +51,9 @@ class CabinetProfileResponse(BaseModel):
     max_alerts_enabled: bool
     watch_rules_active: int
     alert_usage_24h: dict
-    roles: list[str] = []
+    roles: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
     is_admin: bool = False
 
 
@@ -82,6 +84,8 @@ async def cabinet_profile(request: Request) -> CabinetProfileResponse:
         raise HTTPException(status_code=404, detail="profile not found")
 
     role_codes = store.list_user_role_codes(user.telegram_user_id)
+    permissions = store.list_user_permissions(user.telegram_user_id)
+    capabilities = store.list_user_capabilities(user.telegram_user_id)
     usage_24h = store.get_user_alert_usage_24h(
         user.telegram_user_id,
         per_target_daily_limit=settings.monitor_alert_per_target_daily_limit,
@@ -100,7 +104,9 @@ async def cabinet_profile(request: Request) -> CabinetProfileResponse:
         watch_rules_active=store.get_watch_rules_count(user.telegram_user_id),
         alert_usage_24h=usage_24h,
         roles=role_codes,
-        is_admin=("admin" in role_codes or "superadmin" in role_codes),
+        permissions=permissions,
+        capabilities=capabilities,
+        is_admin=bool(capabilities.get("admin_panel_read")),
     )
 
 

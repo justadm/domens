@@ -15,9 +15,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     and_,
+    case,
     create_engine,
     desc,
+    exists,
     func,
+    or_,
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -25,6 +28,58 @@ from sqlalchemy.orm import Mapped, Session, aliased, declarative_base, mapped_co
 
 
 Base = declarative_base()
+
+ROLE_PERMISSIONS: dict[str, set[str]] = {
+    "viewer": {
+        "cabinet.read",
+    },
+    "operator": {
+        "cabinet.read",
+        "watch.manage",
+        "alerts.manage",
+        "copilot.register_domain",
+    },
+    "admin": {
+        "cabinet.read",
+        "watch.manage",
+        "alerts.manage",
+        "copilot.register_domain",
+        "admin.panel.read",
+        "admin.roles.manage.basic",
+    },
+    "superadmin": {
+        "cabinet.read",
+        "watch.manage",
+        "alerts.manage",
+        "copilot.register_domain",
+        "admin.panel.read",
+        "admin.roles.manage.basic",
+        "admin.roles.manage.elevated",
+    },
+}
+
+CAPABILITY_PERMISSIONS: dict[str, str] = {
+    "cabinet_read": "cabinet.read",
+    "watch_manage": "watch.manage",
+    "alerts_manage": "alerts.manage",
+    "copilot_register_domain": "copilot.register_domain",
+    "admin_panel_read": "admin.panel.read",
+    "admin_roles_manage_basic": "admin.roles.manage.basic",
+    "admin_roles_manage_elevated": "admin.roles.manage.elevated",
+}
+
+
+def _permissions_from_roles(role_codes: list[str]) -> list[str]:
+    roles = {item.lower() for item in role_codes}
+    permissions: set[str] = set()
+    for role in roles:
+        permissions |= ROLE_PERMISSIONS.get(role, set())
+    return sorted(permissions)
+
+
+def _capabilities_from_permissions(permissions: list[str]) -> dict[str, bool]:
+    granted = set(permissions)
+    return {key: (permission in granted) for key, permission in CAPABILITY_PERMISSIONS.items()}
 
 
 class DomainStatus(str, Enum):
@@ -839,6 +894,18 @@ class PostgresStore:
         roles = {item.lower() for item in self.list_user_role_codes(telegram_user_id)}
         return bool(roles & requested)
 
+    def list_user_permissions(self, telegram_user_id: str) -> list[str]:
+        return _permissions_from_roles(self.list_user_role_codes(telegram_user_id))
+
+    def has_permission(self, telegram_user_id: str, permission: str) -> bool:
+        target = str(permission).strip().lower()
+        if not target:
+            return False
+        return target in set(self.list_user_permissions(telegram_user_id))
+
+    def list_user_capabilities(self, telegram_user_id: str) -> dict[str, bool]:
+        return _capabilities_from_permissions(self.list_user_permissions(telegram_user_id))
+
     def grant_role(self, telegram_user_id: str, role_code: str, granted_by: str | None = None) -> bool:
         safe_uid = str(telegram_user_id).strip()
         safe_code = str(role_code).strip().lower()
@@ -931,6 +998,7 @@ class PostgresStore:
             items: list[dict] = []
             for user in users:
                 roles = sorted({item for item in role_map.get(user.id, [])})
+                permissions = _permissions_from_roles(roles)
                 if q:
                     hay = " ".join(
                         [
@@ -951,6 +1019,8 @@ class PostgresStore:
                         "chat_id": user.telegram_chat_id,
                         "is_active": bool(user.is_active),
                         "roles": roles,
+                        "permissions": permissions,
+                        "capabilities": _capabilities_from_permissions(permissions),
                         "updated_at": user.updated_at.isoformat(),
                     }
                 )
@@ -1397,6 +1467,230 @@ class PostgresStore:
             ]
 
         return filtered[: max(1, min(limit, 200))]
+
+    def list_bot_events_page(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        event_type: str | None = None,
+        telegram_user_id: str | None = None,
+        telegram_chat_id: str | None = None,
+        query_text: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> dict:
+        safe_limit = max(1, min(int(limit), 300))
+        safe_offset = max(0, int(offset))
+        target_event_type = (event_type or "").strip().lower()
+        target_uid = (telegram_user_id or "").strip()
+        target_chat = (telegram_chat_id or "").strip()
+        q = (query_text or "").strip().lower()
+
+        with self._session() as session:
+            user = aliased(TelegramUserModel)
+            filters = []
+
+            if target_event_type:
+                filters.append(func.lower(BotEventModel.event_type) == target_event_type)
+            if target_uid:
+                filters.append(user.telegram_user_id == target_uid)
+            if target_chat:
+                filters.append(BotEventModel.telegram_chat_id == target_chat)
+            if created_from:
+                filters.append(BotEventModel.created_at >= created_from)
+            if created_to:
+                filters.append(BotEventModel.created_at <= created_to)
+            if q:
+                filters.append(
+                    or_(
+                        func.lower(BotEventModel.event_type).contains(q),
+                        func.lower(func.cast(BotEventModel.payload, Text)).contains(q),
+                        func.lower(func.coalesce(user.telegram_user_id, "")).contains(q),
+                        func.lower(func.coalesce(user.username, "")).contains(q),
+                        func.lower(func.coalesce(BotEventModel.telegram_chat_id, "")).contains(q),
+                    )
+                )
+
+            base_query = (
+                select(BotEventModel, user.telegram_user_id, user.username)
+                .outerjoin(user, user.id == BotEventModel.user_id)
+            )
+            if filters:
+                base_query = base_query.where(and_(*filters))
+
+            total_query = (
+                select(func.count())
+                .select_from(BotEventModel)
+                .outerjoin(user, user.id == BotEventModel.user_id)
+            )
+            if filters:
+                total_query = total_query.where(and_(*filters))
+
+            total = int(session.execute(total_query).scalar() or 0)
+            rows = session.execute(
+                base_query.order_by(desc(BotEventModel.created_at)).offset(safe_offset).limit(safe_limit)
+            ).all()
+
+            items: list[dict] = []
+            for event, uid_row, username_row in rows:
+                items.append(
+                    {
+                        "id": str(event.id),
+                        "event_type": event.event_type,
+                        "telegram_user_id": uid_row,
+                        "username": username_row,
+                        "telegram_chat_id": event.telegram_chat_id,
+                        "payload": event.payload or {},
+                        "created_at": event.created_at.isoformat(),
+                    }
+                )
+
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
+
+    def list_users_activity_page(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        search: str | None = None,
+        permission_contains: str | None = None,
+        registered_only: bool = False,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> dict:
+        safe_limit = max(1, min(int(limit), 300))
+        safe_offset = max(0, int(offset))
+        q = (search or "").strip().lower()
+        perm_sub = (permission_contains or "").strip().lower()
+        login_event_types = {"auth_telegram_login", "max_oauth_login"}
+
+        with self._session() as session:
+            filters = []
+            if q:
+                filters.append(
+                    or_(
+                        func.lower(TelegramUserModel.telegram_user_id).contains(q),
+                        func.lower(func.coalesce(TelegramUserModel.username, "")).contains(q),
+                        func.lower(func.coalesce(TelegramUserModel.first_name, "")).contains(q),
+                        func.lower(func.coalesce(TelegramUserModel.telegram_chat_id, "")).contains(q),
+                    )
+                )
+            if created_from:
+                filters.append(TelegramUserModel.created_at >= created_from)
+            if created_to:
+                filters.append(TelegramUserModel.created_at <= created_to)
+            if registered_only:
+                filters.append(
+                    or_(
+                        TelegramUserModel.disclaimer_accepted_at.is_not(None),
+                        exists(
+                            select(BotEventModel.id)
+                            .where(BotEventModel.user_id == TelegramUserModel.id)
+                            .where(func.lower(BotEventModel.event_type).in_(login_event_types))
+                        ),
+                    )
+                )
+
+            base_query = select(TelegramUserModel)
+            if filters:
+                base_query = base_query.where(and_(*filters))
+
+            total_query = select(func.count()).select_from(TelegramUserModel)
+            if filters:
+                total_query = total_query.where(and_(*filters))
+
+            total = int(session.execute(total_query).scalar() or 0)
+            users = session.execute(
+                base_query.order_by(desc(TelegramUserModel.updated_at)).offset(safe_offset).limit(safe_limit * 2)
+            ).scalars().all()
+
+            if not users:
+                return {
+                    "items": [],
+                    "total": total,
+                    "limit": safe_limit,
+                    "offset": safe_offset,
+                    "next_offset": None,
+                    "prev_offset": None,
+                }
+
+            user_ids = [u.id for u in users]
+            role_rows = session.execute(
+                select(UserRoleModel.user_id, RoleModel.code)
+                .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
+                .where(UserRoleModel.user_id.in_(user_ids))
+            ).all()
+            role_map: dict[uuid.UUID, list[str]] = {}
+            for user_id, code in role_rows:
+                role_map.setdefault(user_id, []).append(str(code))
+
+            event_rows = session.execute(
+                select(
+                    BotEventModel.user_id,
+                    func.count(BotEventModel.id),
+                    func.max(BotEventModel.created_at),
+                    func.max(
+                        case(
+                            (func.lower(BotEventModel.event_type).in_(login_event_types), 1),
+                            else_=0,
+                        )
+                    ),
+                )
+                .where(BotEventModel.user_id.in_(user_ids))
+                .group_by(BotEventModel.user_id)
+            ).all()
+            event_map: dict[uuid.UUID, tuple[int, datetime | None, bool]] = {}
+            for uid, count_total, last_at, has_login in event_rows:
+                event_map[uid] = (int(count_total or 0), last_at, bool(has_login))
+
+            items: list[dict] = []
+            for user in users:
+                roles = sorted({item for item in role_map.get(user.id, [])})
+                permissions = _permissions_from_roles(roles)
+                capabilities = _capabilities_from_permissions(permissions)
+                if perm_sub and not any(perm_sub in p.lower() for p in permissions):
+                    continue
+                events_total, last_event_at, has_login_event = event_map.get(user.id, (0, None, False))
+                is_registered = bool(user.disclaimer_accepted_at) or has_login_event
+                items.append(
+                    {
+                        "telegram_user_id": user.telegram_user_id,
+                        "username": user.username,
+                        "first_name": user.first_name,
+                        "chat_id": user.telegram_chat_id,
+                        "is_active": bool(user.is_active),
+                        "roles": roles,
+                        "permissions": permissions,
+                        "capabilities": capabilities,
+                        "is_registered": is_registered,
+                        "events_total": events_total,
+                        "disclaimer_accepted_at": user.disclaimer_accepted_at.isoformat() if user.disclaimer_accepted_at else None,
+                        "created_at": user.created_at.isoformat(),
+                        "updated_at": user.updated_at.isoformat(),
+                        "last_event_at": last_event_at.isoformat() if last_event_at else None,
+                    }
+                )
+                if len(items) >= safe_limit:
+                    break
+
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
 
     def log_access_event(
         self,

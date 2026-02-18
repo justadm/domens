@@ -67,7 +67,7 @@ def test_admin_cannot_grant_superadmin(monkeypatch) -> None:
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
-    monkeypatch.setattr(admin_router.store, "has_any_role", lambda _uid, _roles: False)
+    monkeypatch.setattr(admin_router.store, "has_permission", lambda _uid, _perm: False)
     monkeypatch.setattr(admin_router.store, "grant_role", lambda *_args, **_kwargs: True)
 
     response = client.post(
@@ -85,7 +85,7 @@ def test_superadmin_can_grant_admin(monkeypatch) -> None:
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["superadmin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
-    monkeypatch.setattr(admin_router.store, "has_any_role", lambda _uid, _roles: True)
+    monkeypatch.setattr(admin_router.store, "has_permission", lambda _uid, _perm: True)
     monkeypatch.setattr(admin_router.store, "grant_role", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(admin_router.store, "log_bot_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(admin_router.store, "log_access_event", lambda *args, **kwargs: None)
@@ -95,3 +95,25 @@ def test_superadmin_can_grant_admin(monkeypatch) -> None:
         json={"telegram_user_id": "42", "role": "admin"},
     )
     assert response.status_code == 200
+
+
+def test_role_manage_requires_basic_permission_for_non_elevated(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+
+    def _fake_has_permission(_uid: str, perm: str) -> bool:
+        return perm == "admin.panel.read"
+
+    monkeypatch.setattr(admin_router.store, "has_permission", _fake_has_permission)
+    monkeypatch.setattr(admin_router.store, "grant_role", lambda *_args, **_kwargs: True)
+
+    response = client.post(
+        "/v1/admin/grant",
+        json={"telegram_user_id": "42", "role": "operator"},
+    )
+    assert response.status_code == 403

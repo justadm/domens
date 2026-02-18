@@ -12,11 +12,17 @@
   - `admin` can manage only `viewer|operator`.
 
 ## Remaining gaps
-- Fine-grained permissions matrix is not implemented yet (`permissions`, `role_permissions`).
+- In-code permission matrix is implemented (`ROLE_PERMISSIONS` + `has_permission`), and key checks already use permission keys:
+  - `admin.panel.read`
+  - `admin.roles.manage.basic`
+  - `admin.roles.manage.elevated`
+  - `copilot.register_domain`
+- DB-backed `permissions/role_permissions` tables are still not implemented (next phase).
 
 ## Planned DB extensions
 1. Add table `permissions`.
 2. Add table `role_permissions`.
+3. Move from in-code map to DB-backed mapping with cache.
 
 ## Planned API/commands
 - `/admin users` - list admins/operators.

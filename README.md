@@ -91,11 +91,16 @@ make down
 - Админ API:
   - `GET /v1/admin/roles`
   - `GET /v1/admin/users`
+  - `GET /v1/admin/users-activity` (users, registration status, permissions/capabilities + filters/pagination)
+  - `GET /v1/admin/bot-events` (global event stream + filters/pagination)
   - `GET /v1/admin/access-events` (filters + pagination: `action`, `actor`, `target`, `created_from/to`, `limit/offset`)
   - `POST /v1/admin/grant`
   - `POST /v1/admin/revoke`
-- Доступ к `/v1/admin/*`: только для пользователей с ролью `admin|superadmin` (или env admin fallback).
+- Доступ к `/v1/admin/*`: по permission `admin.panel.read` (роль `admin|superadmin`, либо env admin fallback).
 - Runtime status endpoint: `GET /v1/admin/copilot-runtime` (LLM mode, fallback, limits, inflight/degrade state).
+- `GET /v1/auth/me` and `GET /v1/cabinet/profile` now return both:
+  - `permissions[]` (effective permissions),
+  - `capabilities{}` (UI-friendly flags, e.g. `admin_panel_read`, `copilot_register_domain`).
 
 ## Copilot (MVP+)
 - Endpoints:
@@ -103,7 +108,7 @@ make down
   - `POST /v1/copilot/confirm`
 - Свободный текст от клиента обрабатывается по интентам и confidence.
 - Изменяющие действия (`watch`, `alerts`, `register`) выполняются только после явного подтверждения.
-- Для `register` требуется роль `operator|admin|superadmin`.
+- Для `register` требуется permission `copilot.register_domain` (по умолчанию у `operator|admin|superadmin`).
 - Веб-интерфейс: кнопки `Задать вопрос` и `Просто поговорить` + блок подтверждения.
 - Веб-интерфейс: кнопка `Отправить` + блок подтверждения.
 - Telegram/MAX паритет для Copilot:

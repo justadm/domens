@@ -210,7 +210,7 @@ def _can_register_domain(telegram_user_id: str) -> bool:
         return False
     if uid in _env_admin_ids():
         return True
-    return store.has_any_role(uid, ["operator", "admin", "superadmin"])
+    return store.has_permission(uid, "copilot.register_domain")
 
 
 def _extract_first_domain(text: str) -> str | None:

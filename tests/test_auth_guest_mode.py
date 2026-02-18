@@ -30,6 +30,7 @@ def test_auth_me_guest_mode_enabled(monkeypatch) -> None:
     )
     monkeypatch.setattr(auth_router.store, "list_user_role_codes", lambda _uid: ["admin"])
     monkeypatch.setattr(auth_router.store, "grant_role", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(auth_router.store, "log_bot_event", lambda *args, **kwargs: None)
 
     client = TestClient(app)
     response = client.get("/v1/auth/me")

@@ -247,10 +247,22 @@
 
               <article class="cabinet-card hidden" id="cabinet-admin-card">
                 <h3 data-i18n="cabinet_admin">Админ</h3>
+                <h4 style="margin: 8px 0 0 0;" data-i18n="cabinet_admin_users_activity">Пользователи и регистрации</h4>
                 <div class="inline-actions compact">
                   <label>
                     <span data-i18n="cabinet_admin_search">Поиск пользователей</span>
                     <input id="cabinet-admin-search" placeholder="@username / user_id" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_permission_search">Permission contains</span>
+                    <input id="cabinet-admin-permission-search" placeholder="admin.panel.read" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_registered_only">Только зарегистрированные</span>
+                    <select id="cabinet-admin-registered-only">
+                      <option value="false">Нет</option>
+                      <option value="true">Да</option>
+                    </select>
                   </label>
                   <label>
                     <span data-i18n="cabinet_admin_limit">Лимит</span>
@@ -259,6 +271,45 @@
                 </div>
                 <button type="button" class="btn-ghost" id="cabinet-admin-refresh-btn" data-i18n="cabinet_admin_refresh">Обновить админ</button>
                 <div id="cabinet-admin-users" class="list-box"></div>
+                <h4 style="margin: 8px 0 0 0;" data-i18n="cabinet_admin_events">Все события</h4>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_admin_events_type">Тип события</span>
+                    <input id="cabinet-admin-events-type" placeholder="incoming_message" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_events_user">User ID</span>
+                    <input id="cabinet-admin-events-user" placeholder="13903713" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_events_chat">Chat ID</span>
+                    <input id="cabinet-admin-events-chat" placeholder="-100..." />
+                  </label>
+                </div>
+                <div class="inline-actions compact">
+                  <label>
+                    <span data-i18n="cabinet_admin_events_search">Поиск по payload</span>
+                    <input id="cabinet-admin-events-search" placeholder="watch_add" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_events_from">С</span>
+                    <input id="cabinet-admin-events-from" type="datetime-local" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_events_to">По</span>
+                    <input id="cabinet-admin-events-to" type="datetime-local" />
+                  </label>
+                  <label>
+                    <span data-i18n="cabinet_admin_events_limit">Лимит</span>
+                    <input id="cabinet-admin-events-limit" type="number" min="1" max="300" value="50" />
+                  </label>
+                </div>
+                <div class="inline-actions compact">
+                  <button type="button" class="btn-ghost" id="cabinet-admin-events-prev-btn" data-i18n="cabinet_admin_access_prev">Назад</button>
+                  <button type="button" class="btn-ghost" id="cabinet-admin-events-next-btn" data-i18n="cabinet_admin_access_next">Вперёд</button>
+                  <span id="cabinet-admin-events-page-info" class="muted"></span>
+                </div>
+                <div id="cabinet-admin-events" class="list-box"></div>
                 <h4 style="margin: 8px 0 0 0;" data-i18n="cabinet_admin_access">Аудит доступа</h4>
                 <div class="inline-actions compact">
                   <label>

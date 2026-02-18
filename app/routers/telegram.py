@@ -48,14 +48,15 @@ def _is_admin_user(user_id: str) -> bool:
         return False
     if safe_uid in _admin_user_ids():
         return True
-    return store.has_any_role(safe_uid, ["admin", "superadmin"])
+    return store.has_permission(safe_uid, "admin.panel.read")
 
 
 def _can_manage_role(user_id: str, role: str) -> bool:
     safe_role = str(role).strip().lower()
-    if safe_role not in {"admin", "superadmin"}:
-        return True
-    return store.has_any_role(str(user_id).strip(), ["superadmin"])
+    safe_uid = str(user_id).strip()
+    if safe_role in {"admin", "superadmin"}:
+        return store.has_permission(safe_uid, "admin.roles.manage.elevated")
+    return store.has_permission(safe_uid, "admin.roles.manage.basic")
 
 
 def _short_rule(rule_id: str) -> str:

@@ -35,6 +35,24 @@ class AdminAccessEventsResponse(BaseModel):
     items: list[dict]
 
 
+class AdminBotEventsResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
+    items: list[dict]
+
+
+class AdminUsersActivityResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
+    items: list[dict]
+
+
 class RoleAssignResponse(BaseModel):
     ok: bool
     telegram_user_id: str
@@ -55,7 +73,7 @@ def _is_admin_uid(telegram_user_id: str) -> bool:
         return False
     if uid in _env_admin_ids():
         return True
-    return store.has_any_role(uid, ["admin", "superadmin"])
+    return store.has_permission(uid, "admin.panel.read")
 
 
 def _require_admin(request: Request) -> AuthUserResponse:
@@ -69,11 +87,13 @@ def _require_admin(request: Request) -> AuthUserResponse:
 
 def _require_role_manage_permission(actor_telegram_user_id: str, role: str) -> None:
     safe_role = str(role).strip().lower()
-    if safe_role not in {"admin", "superadmin"}:
+    if safe_role in {"admin", "superadmin"}:
+        if store.has_permission(actor_telegram_user_id, "admin.roles.manage.elevated"):
+            return
+        raise HTTPException(status_code=403, detail="only superadmin can manage admin/superadmin roles")
+    if store.has_permission(actor_telegram_user_id, "admin.roles.manage.basic"):
         return
-    if store.has_any_role(actor_telegram_user_id, ["superadmin"]):
-        return
-    raise HTTPException(status_code=403, detail="only superadmin can manage admin/superadmin roles")
+    raise HTTPException(status_code=403, detail="admin role manage permission required")
 
 
 @router.get("/roles", response_model=AdminRolesResponse)
@@ -86,6 +106,30 @@ async def list_roles(request: Request) -> AdminRolesResponse:
 async def list_users(request: Request, search: str | None = None, limit: int = 100) -> AdminUsersResponse:
     _require_admin(request)
     return AdminUsersResponse(items=store.list_users_with_roles(search=search, limit=limit))
+
+
+@router.get("/users-activity", response_model=AdminUsersActivityResponse)
+async def list_users_activity(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    search: str | None = None,
+    permission_contains: str | None = None,
+    registered_only: bool = False,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> AdminUsersActivityResponse:
+    _require_admin(request)
+    page = store.list_users_activity_page(
+        limit=limit,
+        offset=offset,
+        search=search,
+        permission_contains=permission_contains,
+        registered_only=registered_only,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    return AdminUsersActivityResponse(**page)
 
 
 @router.post("/grant", response_model=RoleAssignResponse)
@@ -162,6 +206,32 @@ async def list_access_events(
         created_to=created_to,
     )
     return AdminAccessEventsResponse(**page)
+
+
+@router.get("/bot-events", response_model=AdminBotEventsResponse)
+async def list_bot_events(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    event_type: str | None = None,
+    telegram_user_id: str | None = None,
+    telegram_chat_id: str | None = None,
+    search: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> AdminBotEventsResponse:
+    _require_admin(request)
+    page = store.list_bot_events_page(
+        limit=limit,
+        offset=offset,
+        event_type=event_type,
+        telegram_user_id=telegram_user_id,
+        telegram_chat_id=telegram_chat_id,
+        query_text=search,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    return AdminBotEventsResponse(**page)
 
 
 @router.get("/copilot-runtime", response_model=CopilotRuntimeResponse)
