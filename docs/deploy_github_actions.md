@@ -21,10 +21,10 @@ Set in `/opt/domens/.env` at minimum:
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`
 - provider credentials (Timeweb/Selectel/Reg.ru)
 
-Then first run:
+Then first run (nginx mode for shared servers):
 ```bash
-cd /opt/domens
-docker compose -f deploy/docker-compose.prod.yml up -d --build
+cd /opt/domens/deploy
+sudo -n docker compose -p domens -f docker-compose.nginx.yml up -d --build
 ```
 
 ## 3) GitHub repository secrets
@@ -34,12 +34,14 @@ Add these secrets in GitHub -> Settings -> Secrets and variables -> Actions:
 - `DEPLOY_USER` - SSH user on VPS
 - `DEPLOY_APP_DIR` - `/opt/domens`
 - `DEPLOY_SSH_PRIVATE_KEY` - private key that has access to VPS
+- `DEPLOY_COMPOSE_FILE` - optional, default `deploy/docker-compose.nginx.yml`
+- `DEPLOY_COMPOSE_PROJECT` - optional, default `domens`
 
 ## 4) Automatic deploy
 Push to `main`.
 Workflow `.github/workflows/deploy.yml` will SSH into server and run:
 ```bash
-bash /opt/domens/scripts/deploy_prod.sh
+COMPOSE_FILE=deploy/docker-compose.nginx.yml COMPOSE_PROJECT=domens bash /opt/domens/scripts/deploy_prod.sh
 ```
 
 ## 5) Telegram auth/webhook notes

@@ -35,7 +35,9 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
+          DEPLOY_COMPOSE_FILE: ${{ secrets.DEPLOY_COMPOSE_FILE }}
+          DEPLOY_COMPOSE_PROJECT: ${{ secrets.DEPLOY_COMPOSE_PROJECT }}
           DEPLOY_BRANCH: ${{ github.ref_name }}
         run: |
           ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "APP_DIR='${APP_DIR}' BRANCH='${DEPLOY_BRANCH}' bash '${APP_DIR}/scripts/deploy_prod.sh'"
+            "APP_DIR='${APP_DIR}' BRANCH='${DEPLOY_BRANCH}' COMPOSE_FILE='${DEPLOY_COMPOSE_FILE:-deploy/docker-compose.nginx.yml}' COMPOSE_PROJECT='${DEPLOY_COMPOSE_PROJECT:-domens}' bash '${APP_DIR}/scripts/deploy_prod.sh'"

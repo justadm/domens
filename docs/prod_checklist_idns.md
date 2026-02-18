@@ -67,9 +67,11 @@ Expected:
 Set in GitHub repository settings:
 - `DEPLOY_HOST=85.239.44.49`
 - `DEPLOY_PORT=22`
-- `DEPLOY_USER=deploy`
+- `DEPLOY_USER=opsadmin` (or your deploy user)
 - `DEPLOY_APP_DIR=/opt/domens`
 - `DEPLOY_SSH_PRIVATE_KEY=<private key for deploy user>`
+- `DEPLOY_COMPOSE_FILE=deploy/docker-compose.nginx.yml`
+- `DEPLOY_COMPOSE_PROJECT=domens`
 
 ## 7) Smoke tests after deploy
 ```bash
