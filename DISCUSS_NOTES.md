@@ -10,6 +10,7 @@ Updated: 2026-02-18
 - Copilot: добавить Telegram-режим для тех же intent/action confirm-циклов (сейчас веб-first API).
 - Copilot: ввести role-based guard для интентов (`register_domain` только operator+).
 - Copilot: добавить rate-limit на free-form сообщения и подтверждения (anti-spam/anti-bruteforce).
+- Language: add full i18n coverage for all Telegram/MAX fixed texts (currently copilot is localized, legacy command texts are mostly RU).
 - Add `/admin access-events` command in Telegram for quick audit access from bot.
 - Add role hierarchy guard:
   - `admin` cannot grant/revoke `superadmin`;

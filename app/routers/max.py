@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.schemas import ConfirmRegistrationRequest
 from app.services.notifications import send_max_text
 from app.state import store
+from app.routers.copilot import process_copilot_confirm, process_copilot_message
 
 router = APIRouter(prefix="/v1/max", tags=["max"])
 
@@ -25,6 +26,47 @@ def _extract_callback(payload: dict) -> tuple[str, str, str]:
 
 @router.post("/webhook")
 async def max_webhook(payload: dict) -> dict:
+    message_text = str(((payload.get("message") or {}).get("text") if isinstance(payload, dict) else "") or "").strip()
+    chat_id_text = str((payload.get("chat_id") if isinstance(payload, dict) else "") or "")
+    sender_text = str((((payload.get("message") or {}).get("sender") or {}).get("user_id") if isinstance(payload, dict) else "") or "")
+    if message_text and sender_text:
+        lowered = message_text.lower()
+        if lowered.startswith("/ask "):
+            data = await process_copilot_message(
+                user_id=f"max:{sender_text}",
+                message=message_text[5:].strip(),
+                mode="assistant",
+                channel="max",
+            )
+            reply = data.reply
+            if data.requires_confirmation and data.confirmation_token:
+                reply += f"\n\nConfirm: /confirm {data.confirmation_token}\nCancel: /cancel {data.confirmation_token}"
+            if chat_id_text:
+                await send_max_text(chat_id_text, reply)
+            return {"ok": True, "action": "copilot_ask"}
+        if lowered.startswith("/chat "):
+            data = await process_copilot_message(
+                user_id=f"max:{sender_text}",
+                message=message_text[6:].strip(),
+                mode="chat",
+                channel="max",
+            )
+            if chat_id_text:
+                await send_max_text(chat_id_text, data.reply)
+            return {"ok": True, "action": "copilot_chat"}
+        if lowered.startswith("/confirm "):
+            token = message_text[9:].strip()
+            result = await process_copilot_confirm(user_id=f"max:{sender_text}", confirmation_token=token, decision="confirm")
+            if chat_id_text:
+                await send_max_text(chat_id_text, f"{result.status}: {result.message}")
+            return {"ok": True, "action": "copilot_confirm"}
+        if lowered.startswith("/cancel "):
+            token = message_text[8:].strip()
+            result = await process_copilot_confirm(user_id=f"max:{sender_text}", confirmation_token=token, decision="cancel")
+            if chat_id_text:
+                await send_max_text(chat_id_text, f"{result.status}: {result.message}")
+            return {"ok": True, "action": "copilot_cancel"}
+
     callback_data, chat_id, user_id = _extract_callback(payload)
     parts = callback_data.split(":", 1)
     if len(parts) != 2:

@@ -308,6 +308,13 @@ function applyLanguage(lang) {
   }
 }
 
+function normalizeLangFromLocale(locale) {
+  const value = String(locale || "").toLowerCase();
+  if (value.startsWith("en")) return "en";
+  if (value.startsWith("ru")) return "ru";
+  return null;
+}
+
 function applyTheme(theme) {
   currentTheme = theme === "light" ? "light" : "dark";
   localStorage.setItem("domens_theme", currentTheme);
@@ -799,6 +806,12 @@ function renderAuthState(authenticated, user) {
   }
 
   if (authenticated && user) {
+    if (!localStorage.getItem("domens_lang_manual")) {
+      const profileLang = normalizeLangFromLocale(user.locale);
+      if (profileLang && profileLang !== currentLang) {
+        applyLanguage(profileLang);
+      }
+    }
     const username = user.username ? `@${user.username}` : user.first_name || user.telegram_user_id;
     userLine.textContent = `${dict.auth_logged_as} ${username}`;
     logoutBtn.classList.remove("hidden");
@@ -979,6 +992,7 @@ document.getElementById("execute-form").addEventListener("submit", async (e) => 
 });
 
 document.getElementById("lang-select").addEventListener("change", (e) => {
+  localStorage.setItem("domens_lang_manual", "1");
   applyLanguage(e.target.value);
   refreshHealth();
   refreshActivity();
@@ -1243,6 +1257,10 @@ document.getElementById("copilot-cancel-btn").addEventListener("click", async ()
 });
 
 applyTheme(currentTheme);
+if (!localStorage.getItem("domens_lang_manual")) {
+  const browserLang = normalizeLangFromLocale(navigator.language);
+  if (browserLang) currentLang = browserLang;
+}
 applyLanguage(currentLang);
 setupMenu();
 setupSorting();

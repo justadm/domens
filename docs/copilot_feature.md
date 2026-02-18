@@ -21,6 +21,11 @@ while enforcing explicit confirmation before any state-changing action.
 4. User confirms/cancels.
 5. System executes action and returns structured result.
 
+Parity channels:
+- Web LK: buttons `Задать вопрос` / `Просто поговорить`.
+- Telegram: `/ask`, `/chat`, `/confirm <cp_token>`, `/cancel <cp_token>`.
+- MAX: `/ask`, `/chat`, `/confirm <cp_token>`, `/cancel <cp_token>` in incoming text.
+
 ## API
 - `POST /v1/copilot/message`
   - input: `message`, `mode`, `conversation_id`, `channel`
@@ -35,6 +40,10 @@ while enforcing explicit confirmation before any state-changing action.
 - `register_domain` -> create+execute registration flow (requires confirm)
 - `domain_check` -> status check with provider inference (no confirm)
 - `help|qa|chat` -> conversational answer (no confirm)
+
+## Language handling
+- Response language is derived from stored user `locale` (`en*` -> English, otherwise Russian).
+- Web UI language auto-switches from profile `locale` unless user manually overrides language selector.
 
 ## Detailed Logging (High Verbosity)
 All copilot steps are persisted:

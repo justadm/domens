@@ -51,6 +51,55 @@ class CopilotConfirmResponse(BaseModel):
     execution_result: dict | None = None
 
 
+def _lang_for_user(user_id: str) -> str:
+    user = store.get_telegram_user(user_id)
+    locale = str(user.locale or "").strip().lower() if user else ""
+    if locale.startswith("en"):
+        return "en"
+    return "ru"
+
+
+def _t(lang: str, key: str) -> str:
+    ru = {
+        "help": (
+            "Я могу: объяснить логику сервиса, проверить домен, предложить watch-правило, "
+            "включить/выключить алерты и подготовить регистрацию домена с подтверждением."
+        ),
+        "qa": "Принято. Сформулируйте вопрос подробнее, и я отвечу по данным системы.",
+        "chat": "Понял. Можем обсудить идею или задачу; для действий я сначала запрошу подтверждение.",
+        "domain_check_start": "Сейчас проверю домен и верну статус.",
+        "create_watch_confirm": "Понял как создание watch-правила: `{value}`. Подтвердите выполнение.",
+        "toggle_alerts_confirm": "Понял запрос на переключение алертов. Подтвердите выполнение.",
+        "register_domain_confirm": "Понял запрос на регистрацию: `{value}`. Подтвердите выполнение.",
+        "request_received": "Запрос получен.",
+        "domain_missing": "Не вижу домен в запросе. Пример: `проверь freebrand.com`.",
+        "action_done": "Действие выполнено.",
+        "action_canceled": "Действие отменено.",
+        "token_expired": "Срок подтверждения истек.",
+        "already_done": "Запрос уже обработан: {status}",
+    }
+    en = {
+        "help": (
+            "I can explain service logic, check a domain, suggest a watch rule, "
+            "toggle alerts, and prepare domain registration with explicit confirmation."
+        ),
+        "qa": "Got it. Ask your question in more detail and I will answer using system data.",
+        "chat": "Understood. We can discuss ideas; for actions I will ask for confirmation first.",
+        "domain_check_start": "I will check the domain status now.",
+        "create_watch_confirm": "I understood this as creating a watch rule: `{value}`. Please confirm.",
+        "toggle_alerts_confirm": "I understood this as alert toggle request. Please confirm.",
+        "register_domain_confirm": "I understood this as registration request: `{value}`. Please confirm.",
+        "request_received": "Request received.",
+        "domain_missing": "No domain detected. Example: `check freebrand.com`.",
+        "action_done": "Action executed.",
+        "action_canceled": "Action canceled.",
+        "token_expired": "Confirmation token has expired.",
+        "already_done": "Request already processed: {status}",
+    }
+    bundle = en if lang == "en" else ru
+    return bundle.get(key, key)
+
+
 def _require_user(request: Request) -> AuthUserResponse:
     user = get_authenticated_user(request)
     if not user:
@@ -127,24 +176,25 @@ def _format_preview(action_type: str, payload: dict) -> dict:
 
 
 def _assistant_text_for_intent(intent: str, entities: dict) -> str:
+    return _assistant_text_for_intent_lang(intent, entities, "ru")
+
+
+def _assistant_text_for_intent_lang(intent: str, entities: dict, lang: str) -> str:
     if intent == "help":
-        return (
-            "Я могу: объяснить логику сервиса, проверить домен, предложить watch-правило, "
-            "включить/выключить алерты и подготовить регистрацию домена с подтверждением."
-        )
+        return _t(lang, "help")
     if intent == "qa":
-        return "Принято. Сформулируйте вопрос подробнее, и я отвечу по данным системы."
+        return _t(lang, "qa")
     if intent == "chat":
-        return "Понял. Можем обсудить идею или задачу; для действий я сначала запрошу подтверждение."
+        return _t(lang, "chat")
     if intent == "domain_check":
-        return "Сейчас проверю домен и верну статус."
+        return _t(lang, "domain_check_start")
     if intent == "create_watch":
-        return f"Понял как создание watch-правила: `{entities.get('query')}`. Подтвердите выполнение."
+        return _t(lang, "create_watch_confirm").format(value=entities.get("query"))
     if intent == "toggle_alerts":
-        return "Понял запрос на переключение алертов. Подтвердите выполнение."
+        return _t(lang, "toggle_alerts_confirm")
     if intent == "register_domain":
-        return f"Понял запрос на регистрацию: `{entities.get('domain')}`. Подтвердите выполнение."
-    return "Запрос получен."
+        return _t(lang, "register_domain_confirm").format(value=entities.get("domain"))
+    return _t(lang, "request_received")
 
 
 def _action_from_intent(intent: str, entities: dict) -> tuple[str, dict] | None:
@@ -167,20 +217,36 @@ def _action_from_intent(intent: str, entities: dict) -> tuple[str, dict] | None:
 @router.post("/message", response_model=CopilotMessageResponse)
 async def copilot_message(payload: CopilotMessageRequest, request: Request) -> CopilotMessageResponse:
     user = _require_user(request)
-    user_id = user.telegram_user_id
-    mode = str(payload.mode or "assistant").strip().lower()
+    return await process_copilot_message(
+        user_id=user.telegram_user_id,
+        message=payload.message,
+        mode=payload.mode,
+        conversation_id=payload.conversation_id,
+        channel=payload.channel,
+    )
+
+
+async def process_copilot_message(
+    user_id: str,
+    message: str,
+    mode: str = "assistant",
+    conversation_id: str | None = None,
+    channel: str = "web",
+) -> CopilotMessageResponse:
+    lang = _lang_for_user(user_id)
+    mode = str(mode or "assistant").strip().lower()
     if mode not in {"ask", "chat", "assistant"}:
         mode = "assistant"
 
-    conversation_id = str(payload.conversation_id or "").strip()
+    conversation_id = str(conversation_id or "").strip()
     if conversation_id:
         conversation = store.get_conversation(conversation_id, telegram_user_id=user_id)
         if not conversation:
             conversation_id = ""
     if not conversation_id:
-        conversation_id = store.create_conversation(user_id, channel=payload.channel)
+        conversation_id = store.create_conversation(user_id, channel=channel)
 
-    message_text = payload.message.strip()
+    message_text = str(message or "").strip()
     intent, confidence, entities = _detect_intent(message_text, mode)
     store.log_conversation_message(
         conversation_id=conversation_id,
@@ -189,7 +255,7 @@ async def copilot_message(payload: CopilotMessageRequest, request: Request) -> C
         message_text=message_text,
         intent=intent,
         confidence=confidence,
-        raw_payload={"mode": mode, "channel": payload.channel, "entities": entities},
+        raw_payload={"mode": mode, "channel": channel, "entities": entities},
     )
     store.log_copilot_event(
         event_type="message_received",
@@ -201,7 +267,7 @@ async def copilot_message(payload: CopilotMessageRequest, request: Request) -> C
     if intent == "domain_check":
         domain = str(entities.get("domain") or "").strip().lower()
         if not domain:
-            reply = "Не вижу домен в запросе. Пример: `проверь freebrand.com`."
+            reply = _t(lang, "domain_missing")
             store.log_conversation_message(
                 conversation_id=conversation_id,
                 telegram_user_id=user_id,
@@ -255,7 +321,7 @@ async def copilot_message(payload: CopilotMessageRequest, request: Request) -> C
         if not confirmation:
             raise HTTPException(status_code=500, detail="failed to prepare confirmation")
 
-        reply = _assistant_text_for_intent(intent, entities)
+        reply = _assistant_text_for_intent_lang(intent, entities, lang)
         store.log_copilot_event(
             event_type="confirmation_requested",
             telegram_user_id=user_id,
@@ -282,7 +348,7 @@ async def copilot_message(payload: CopilotMessageRequest, request: Request) -> C
             action_preview=_format_preview(action_type, action_payload),
         )
 
-    reply = _assistant_text_for_intent(intent, entities)
+    reply = _assistant_text_for_intent_lang(intent, entities, lang)
     store.log_conversation_message(
         conversation_id=conversation_id,
         telegram_user_id=user_id,
@@ -309,19 +375,23 @@ async def copilot_message(payload: CopilotMessageRequest, request: Request) -> C
 @router.post("/confirm", response_model=CopilotConfirmResponse)
 async def copilot_confirm(payload: CopilotConfirmRequest, request: Request) -> CopilotConfirmResponse:
     user = _require_user(request)
-    user_id = user.telegram_user_id
-    decision = str(payload.decision or "confirm").strip().lower()
+    return await process_copilot_confirm(user.telegram_user_id, payload.confirmation_token, payload.decision)
+
+
+async def process_copilot_confirm(user_id: str, confirmation_token: str, decision: str = "confirm") -> CopilotConfirmResponse:
+    lang = _lang_for_user(user_id)
+    decision = str(decision or "confirm").strip().lower()
     if decision not in {"confirm", "cancel"}:
         raise HTTPException(status_code=400, detail="decision must be confirm or cancel")
 
-    item = store.get_copilot_confirmation(payload.confirmation_token, telegram_user_id=user_id)
+    item = store.get_copilot_confirmation(confirmation_token, telegram_user_id=user_id)
     if not item:
         raise HTTPException(status_code=404, detail="confirmation not found")
 
     if item["status"] != "pending":
         return CopilotConfirmResponse(
             status=item["status"],
-            message=f"Запрос уже обработан: {item['status']}",
+            message=_t(lang, "already_done").format(status=item["status"]),
             execution_result=item.get("result_payload") or None,
         )
 
@@ -332,26 +402,26 @@ async def copilot_confirm(payload: CopilotConfirmRequest, request: Request) -> C
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
-        store.update_copilot_confirmation_status(payload.confirmation_token, "expired", error_message="token expired")
+        store.update_copilot_confirmation_status(confirmation_token, "expired", error_message="token expired")
         store.log_copilot_event(
             event_type="confirmation_expired",
             telegram_user_id=user_id,
             conversation_id=item["conversation_id"],
-            confirmation_token=payload.confirmation_token,
+            confirmation_token=confirmation_token,
             payload={},
         )
-        return CopilotConfirmResponse(status="expired", message="Срок подтверждения истек.")
+        return CopilotConfirmResponse(status="expired", message=_t(lang, "token_expired"))
 
     if decision == "cancel":
-        store.update_copilot_confirmation_status(payload.confirmation_token, "canceled")
+        store.update_copilot_confirmation_status(confirmation_token, "canceled")
         store.log_copilot_event(
             event_type="confirmation_canceled",
             telegram_user_id=user_id,
             conversation_id=item["conversation_id"],
-            confirmation_token=payload.confirmation_token,
+            confirmation_token=confirmation_token,
             payload={},
         )
-        return CopilotConfirmResponse(status="canceled", message="Действие отменено.")
+        return CopilotConfirmResponse(status="canceled", message=_t(lang, "action_canceled"))
 
     action_type = str(item["action_type"] or "").strip().lower()
     action_payload = item.get("action_payload") or {}
@@ -400,23 +470,23 @@ async def copilot_confirm(payload: CopilotConfirmRequest, request: Request) -> C
         else:
             raise RuntimeError(f"unsupported action_type: {action_type}")
 
-        store.update_copilot_confirmation_status(payload.confirmation_token, "executed", result_payload=execution_result)
+        store.update_copilot_confirmation_status(confirmation_token, "executed", result_payload=execution_result)
         store.log_copilot_event(
             event_type="action_executed",
             telegram_user_id=user_id,
             conversation_id=item["conversation_id"],
-            confirmation_token=payload.confirmation_token,
+            confirmation_token=confirmation_token,
             payload={"action_type": action_type, "result": execution_result},
         )
-        return CopilotConfirmResponse(status="executed", message="Действие выполнено.", execution_result=execution_result)
+        return CopilotConfirmResponse(status="executed", message=_t(lang, "action_done"), execution_result=execution_result)
     except Exception as exc:
         error_text = str(exc)
-        store.update_copilot_confirmation_status(payload.confirmation_token, "failed", error_message=error_text)
+        store.update_copilot_confirmation_status(confirmation_token, "failed", error_message=error_text)
         store.log_copilot_event(
             event_type="action_failed",
             telegram_user_id=user_id,
             conversation_id=item["conversation_id"],
-            confirmation_token=payload.confirmation_token,
+            confirmation_token=confirmation_token,
             payload={"action_type": action_type, "error": error_text},
         )
         return CopilotConfirmResponse(status="failed", message=error_text, execution_result=execution_result or None)

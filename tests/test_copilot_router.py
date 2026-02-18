@@ -16,6 +16,7 @@ def _mock_auth(monkeypatch) -> None:
         "get_authenticated_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=True),
     )
+    monkeypatch.setattr(copilot_router, "_lang_for_user", lambda _uid: "ru")
 
 
 def test_copilot_message_requires_auth(monkeypatch) -> None:

@@ -16,6 +16,7 @@ from app.services.notifications import (
 )
 from app.services.timeweb_api import TimewebApiClient
 from app.state import store
+from app.routers.copilot import process_copilot_confirm, process_copilot_message
 
 router = APIRouter(prefix="/v1/telegram", tags=["telegram"])
 
@@ -230,7 +231,11 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
         "/watch delete <id> - удалить правило\n"
         "/alerts on|off - включить/выключить алерты\n"
         "/domains now <query> - разовый подбор кандидатов\n"
-        "/menu - показать меню кнопок"
+        "/menu - показать меню кнопок\n"
+        "/ask <text> - вопрос в Copilot\n"
+        "/chat <text> - свободный диалог\n"
+        "/confirm <cp_token> - подтвердить действие Copilot\n"
+        "/cancel <cp_token> - отменить действие Copilot"
     )
     if _is_admin_user(user_id):
         help_text += (
@@ -661,6 +666,59 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
     return {"ok": True, "action": "admin_unknown"}
 
 
+async def _handle_copilot_telegram(chat_id: str, user_id: str, text: str) -> dict:
+    if text.startswith("/ask"):
+        payload = text[4:].strip()
+        if not payload:
+            await send_telegram_text(chat_id, "Формат: /ask <text>")
+            return {"ok": True, "action": "copilot_ask_bad_format"}
+        data = await process_copilot_message(
+            user_id=user_id,
+            message=payload,
+            mode="assistant",
+            channel="telegram",
+        )
+        msg = data.reply
+        if data.requires_confirmation and data.confirmation_token:
+            msg += f"\n\nПодтверждение: /confirm {data.confirmation_token}\nОтмена: /cancel {data.confirmation_token}"
+        await send_telegram_text(chat_id, msg)
+        return {"ok": True, "action": "copilot_ask_done"}
+
+    if text.startswith("/chat"):
+        payload = text[5:].strip()
+        if not payload:
+            await send_telegram_text(chat_id, "Формат: /chat <text>")
+            return {"ok": True, "action": "copilot_chat_bad_format"}
+        data = await process_copilot_message(
+            user_id=user_id,
+            message=payload,
+            mode="chat",
+            channel="telegram",
+        )
+        await send_telegram_text(chat_id, data.reply)
+        return {"ok": True, "action": "copilot_chat_done"}
+
+    if text.startswith("/confirm"):
+        token = text.replace("/confirm", "", 1).strip()
+        if not token:
+            await send_telegram_text(chat_id, "Формат: /confirm <cp_token>")
+            return {"ok": True, "action": "copilot_confirm_bad_format"}
+        result = await process_copilot_confirm(user_id=user_id, confirmation_token=token, decision="confirm")
+        await send_telegram_text(chat_id, f"{result.status}: {result.message}")
+        return {"ok": True, "action": "copilot_confirm_done"}
+
+    if text.startswith("/cancel"):
+        token = text.replace("/cancel", "", 1).strip()
+        if not token:
+            await send_telegram_text(chat_id, "Формат: /cancel <cp_token>")
+            return {"ok": True, "action": "copilot_cancel_bad_format"}
+        result = await process_copilot_confirm(user_id=user_id, confirmation_token=token, decision="cancel")
+        await send_telegram_text(chat_id, f"{result.status}: {result.message}")
+        return {"ok": True, "action": "copilot_cancel_done"}
+
+    return {"ok": True, "action": "copilot_unknown"}
+
+
 async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callback_query_id: str | None) -> dict:
     if callback_query_id:
         await answer_telegram_callback(callback_query_id)
@@ -796,6 +854,8 @@ async def process_telegram_update(payload: dict) -> dict:
         return await _handle_alerts(chat_id, user_id, text)
     if text.startswith("/domains"):
         return await _handle_domains_now(chat_id, user_id, text)
+    if text.startswith("/ask") or text.startswith("/chat") or text.startswith("/confirm") or text.startswith("/cancel"):
+        return await _handle_copilot_telegram(chat_id, user_id, text)
     if text.startswith("/admin"):
         return await _handle_admin(chat_id, user_id, text)
 
