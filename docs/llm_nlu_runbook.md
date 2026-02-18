@@ -15,6 +15,9 @@ Use a free/low-cost LLM to parse free-form user messages into structured intents
 1. Primary: `ollama` (local model, no per-request cost).
 2. Optional fallback: `openrouter` (free-tier models if configured).
 
+For multi-project setup with one shared Ollama instance, see:
+- `docs/shared_ollama_multi_project.md`
+
 ## Supported intents
 - `create_watch`
 - `toggle_alerts`

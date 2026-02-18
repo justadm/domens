@@ -15,6 +15,7 @@ MVP-сервис для поиска/отслеживания востребов
 - `docs/telegram_local_and_prod_runbook.md` — как переключить Telegram с локального polling на прод webhook (IP/домен/HTTPS)
 - `docs/copilot_feature.md` — свободные обращения клиента (вопрос/чат/действия с подтверждением) + детальный аудит
 - `docs/llm_nlu_runbook.md` — подключение LLM для intent parsing (Ollama + fallback), безопасные ограничения
+- `docs/shared_ollama_multi_project.md` — одна общая Ollama-модель для нескольких проектов, с изоляцией коннекторов
 - `app/` — каркас backend (FastAPI)
 
 ## Быстрый старт
@@ -45,6 +46,7 @@ docker compose up --build -d
 ## Прод: VPS + поддомен + автодеплой из GitHub
 - Nginx mode (for busy servers with shared 80/443): `deploy/docker-compose.nginx.yml`
 - Прод compose: `deploy/docker-compose.prod.yml`
+- Shared Ollama (multi-project): `deploy/docker-compose.shared-ollama.yml`
 - Reverse proxy/HTTPS: `deploy/Caddyfile`
 - Deploy script на сервере: `scripts/deploy_prod.sh`
 - GitHub Actions workflow: `.github/workflows/deploy.yml`
