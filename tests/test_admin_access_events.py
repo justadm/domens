@@ -187,3 +187,80 @@ def test_admin_dashboard_returns_stats(monkeypatch) -> None:
     data = response.json()
     assert data["stats"]["users_total"] == 4
     assert data["stats"]["users_registered"] == 3
+
+
+def test_admin_users_activity_csv(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+    monkeypatch.setattr(
+        admin_router.store,
+        "list_users_activity_page",
+        lambda **_kwargs: {
+            "total": 1,
+            "limit": 10,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "telegram_user_id": "42",
+                    "username": "tester",
+                    "first_name": "Test",
+                    "chat_id": "42",
+                    "is_registered": True,
+                    "events_total": 3,
+                    "roles": ["viewer_admin"],
+                    "permissions": ["admin.panel.read"],
+                    "last_event_at": "2026-02-18T01:00:00+00:00",
+                    "created_at": "2026-02-18T00:00:00+00:00",
+                    "updated_at": "2026-02-18T01:00:00+00:00",
+                }
+            ],
+        },
+    )
+    response = client.get("/v1/admin/users-activity.csv?limit=10")
+    assert response.status_code == 200
+    assert "text/csv" in response.headers.get("content-type", "")
+    assert "telegram_user_id,username" in response.text
+    assert "42,tester" in response.text
+
+
+def test_admin_bot_events_csv(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+    monkeypatch.setattr(
+        admin_router.store,
+        "list_bot_events_page",
+        lambda **_kwargs: {
+            "total": 1,
+            "limit": 10,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "created_at": "2026-02-18T01:00:00+00:00",
+                    "event_type": "incoming_message",
+                    "telegram_user_id": "42",
+                    "username": "tester",
+                    "telegram_chat_id": "42",
+                    "payload": {"text": "hello"},
+                }
+            ],
+        },
+    )
+    response = client.get("/v1/admin/bot-events.csv?limit=10")
+    assert response.status_code == 200
+    assert "text/csv" in response.headers.get("content-type", "")
+    assert "event_type,telegram_user_id" in response.text
+    assert "incoming_message,42,tester,42" in response.text

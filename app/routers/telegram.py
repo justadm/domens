@@ -656,9 +656,12 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
 
         target_uid = parts[2].strip()
         role = parts[3].strip().lower()
-        allowed = {"viewer", "operator", "admin", "superadmin"}
+        allowed = {"viewer", "viewer_admin", "operator", "manager_admin", "admin", "superadmin"}
         if not target_uid or role not in allowed:
-            await send_telegram_text(chat_id, "Роль должна быть одной из: viewer, operator, admin, superadmin.")
+            await send_telegram_text(
+                chat_id,
+                "Роль должна быть одной из: viewer, viewer_admin, operator, manager_admin, admin, superadmin.",
+            )
             return {"ok": True, "action": f"admin_{action}_invalid_role"}
         if not _can_manage_role(user_id, role):
             await send_telegram_text(chat_id, "Только superadmin может выдавать/снимать роли admin/superadmin.")

@@ -33,11 +33,18 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "viewer": {
         "cabinet.read",
     },
+    "viewer_admin": {
+        "admin.panel.read",
+    },
     "operator": {
         "cabinet.read",
         "watch.manage",
         "alerts.manage",
         "copilot.register_domain",
+    },
+    "manager_admin": {
+        "admin.panel.read",
+        "admin.roles.manage.basic",
     },
     "admin": {
         "cabinet.read",
@@ -851,7 +858,9 @@ class PostgresStore:
     def ensure_base_roles(self) -> None:
         base_roles = {
             "viewer": "Viewer",
+            "viewer_admin": "Viewer Admin",
             "operator": "Operator",
+            "manager_admin": "Manager Admin",
             "admin": "Admin",
             "superadmin": "Superadmin",
         }

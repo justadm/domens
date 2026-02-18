@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
 from app.routers.copilot import get_copilot_runtime_status
+from app.services.ecom_stats import fetch_external_ecom_stats
 from app.state import store
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -115,7 +118,20 @@ async def list_users(request: Request, search: str | None = None, limit: int = 1
 @router.get("/dashboard", response_model=AdminDashboardResponse)
 async def dashboard(request: Request) -> AdminDashboardResponse:
     _require_admin(request)
-    return AdminDashboardResponse(stats=store.get_admin_dashboard_stats())
+    stats = store.get_admin_dashboard_stats()
+    external = await fetch_external_ecom_stats()
+    if external:
+        for key in ("stores_total", "products_total", "ecommerce_orders_total"):
+            if key in external and external.get(key) is not None:
+                stats[key] = external.get(key)
+        stats["ecom_source"] = str(settings.ecom_stats_base_url or "")
+        if external.get("ecom_error"):
+            stats["ecom_error"] = external.get("ecom_error")
+        for extra_key, value in external.items():
+            if extra_key in {"stores_total", "products_total", "ecommerce_orders_total", "ecom_error"}:
+                continue
+            stats[f"ecom_{extra_key}"] = value
+    return AdminDashboardResponse(stats=stats)
 
 
 @router.get("/users-activity", response_model=AdminUsersActivityResponse)
@@ -147,7 +163,7 @@ async def grant_role(payload: RoleAssignRequest, request: Request) -> RoleAssign
     admin = _require_admin(request)
     uid = payload.telegram_user_id.strip()
     role = payload.role.strip().lower()
-    if role not in {"viewer", "operator", "admin", "superadmin"}:
+    if role not in {"viewer", "viewer_admin", "operator", "manager_admin", "admin", "superadmin"}:
         raise HTTPException(status_code=400, detail="invalid role")
     _require_role_manage_permission(admin.telegram_user_id, role)
     ok = store.grant_role(uid, role, granted_by=f"admin:{admin.telegram_user_id}")
@@ -173,7 +189,7 @@ async def revoke_role(payload: RoleAssignRequest, request: Request) -> RoleAssig
     admin = _require_admin(request)
     uid = payload.telegram_user_id.strip()
     role = payload.role.strip().lower()
-    if role not in {"viewer", "operator", "admin", "superadmin"}:
+    if role not in {"viewer", "viewer_admin", "operator", "manager_admin", "admin", "superadmin"}:
         raise HTTPException(status_code=400, detail="invalid role")
     _require_role_manage_permission(admin.telegram_user_id, role)
     ok = store.revoke_role(uid, role)
@@ -242,6 +258,120 @@ async def list_bot_events(
         created_to=created_to,
     )
     return AdminBotEventsResponse(**page)
+
+
+@router.get("/users-activity.csv")
+async def export_users_activity_csv(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    search: str | None = None,
+    permission_contains: str | None = None,
+    registered_only: bool = False,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> Response:
+    _require_admin(request)
+    page = store.list_users_activity_page(
+        limit=limit,
+        offset=offset,
+        search=search,
+        permission_contains=permission_contains,
+        registered_only=registered_only,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "telegram_user_id",
+            "username",
+            "first_name",
+            "chat_id",
+            "is_registered",
+            "events_total",
+            "roles",
+            "permissions",
+            "last_event_at",
+            "created_at",
+            "updated_at",
+        ]
+    )
+    for item in page.get("items", []):
+        writer.writerow(
+            [
+                item.get("telegram_user_id"),
+                item.get("username"),
+                item.get("first_name"),
+                item.get("chat_id"),
+                item.get("is_registered"),
+                item.get("events_total"),
+                ",".join(item.get("roles", [])),
+                ",".join(item.get("permissions", [])),
+                item.get("last_event_at"),
+                item.get("created_at"),
+                item.get("updated_at"),
+            ]
+        )
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=users_activity.csv"},
+    )
+
+
+@router.get("/bot-events.csv")
+async def export_bot_events_csv(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    event_type: str | None = None,
+    telegram_user_id: str | None = None,
+    telegram_chat_id: str | None = None,
+    search: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> Response:
+    _require_admin(request)
+    page = store.list_bot_events_page(
+        limit=limit,
+        offset=offset,
+        event_type=event_type,
+        telegram_user_id=telegram_user_id,
+        telegram_chat_id=telegram_chat_id,
+        query_text=search,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "created_at",
+            "event_type",
+            "telegram_user_id",
+            "username",
+            "telegram_chat_id",
+            "payload_json",
+        ]
+    )
+    for item in page.get("items", []):
+        writer.writerow(
+            [
+                item.get("created_at"),
+                item.get("event_type"),
+                item.get("telegram_user_id"),
+                item.get("username"),
+                item.get("telegram_chat_id"),
+                str(item.get("payload", {})),
+            ]
+        )
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=bot_events.csv"},
+    )
 
 
 @router.get("/copilot-runtime", response_model=CopilotRuntimeResponse)

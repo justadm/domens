@@ -127,19 +127,24 @@ function renderClients() {
 }
 
 async function loadClients() {
+  const params = buildClientsParams(clientsOffset);
+  clientsPage = await api(`/v1/admin/users-activity?${params.toString()}`);
+  clientsOffset = Number(clientsPage.offset || 0);
+  renderClients();
+}
+
+function buildClientsParams(offset) {
   const params = new URLSearchParams();
   const search = document.getElementById("clients-search").value.trim();
   const perm = document.getElementById("clients-permission").value.trim();
   const regOnly = document.getElementById("clients-registered").value === "true";
   const limit = Math.max(1, Math.min(200, Number(document.getElementById("clients-limit").value || 50)));
   params.set("limit", String(limit));
-  params.set("offset", String(clientsOffset));
+  params.set("offset", String(offset));
   if (search) params.set("search", search);
   if (perm) params.set("permission_contains", perm);
   if (regOnly) params.set("registered_only", "true");
-  clientsPage = await api(`/v1/admin/users-activity?${params.toString()}`);
-  clientsOffset = Number(clientsPage.offset || 0);
-  renderClients();
+  return params;
 }
 
 function renderEvents() {
@@ -176,6 +181,13 @@ function renderEvents() {
 }
 
 async function loadEvents() {
+  const params = buildEventsParams(eventsOffset);
+  eventsPage = await api(`/v1/admin/bot-events?${params.toString()}`);
+  eventsOffset = Number(eventsPage.offset || 0);
+  renderEvents();
+}
+
+function buildEventsParams(offset) {
   const params = new URLSearchParams();
   const type = document.getElementById("events-type").value.trim();
   const uid = document.getElementById("events-user").value.trim();
@@ -183,14 +195,12 @@ async function loadEvents() {
   const search = document.getElementById("events-search").value.trim();
   const limit = Math.max(1, Math.min(300, Number(document.getElementById("events-limit").value || 50)));
   params.set("limit", String(limit));
-  params.set("offset", String(eventsOffset));
+  params.set("offset", String(offset));
   if (type) params.set("event_type", type);
   if (uid) params.set("telegram_user_id", uid);
   if (chat) params.set("telegram_chat_id", chat);
   if (search) params.set("search", search);
-  eventsPage = await api(`/v1/admin/bot-events?${params.toString()}`);
-  eventsOffset = Number(eventsPage.offset || 0);
-  renderEvents();
+  return params;
 }
 
 function bind() {
@@ -216,6 +226,10 @@ function bind() {
     clientsOffset = Number(clientsPage.next_offset) || 0;
     await loadClients();
   });
+  document.getElementById("clients-export").addEventListener("click", () => {
+    const params = buildClientsParams(clientsOffset);
+    window.open(`/v1/admin/users-activity.csv?${params.toString()}`, "_blank");
+  });
   document.getElementById("events-apply").addEventListener("click", async () => {
     eventsOffset = 0;
     await loadEvents();
@@ -229,6 +243,10 @@ function bind() {
     if (eventsPage.next_offset === null || eventsPage.next_offset === undefined) return;
     eventsOffset = Number(eventsPage.next_offset) || 0;
     await loadEvents();
+  });
+  document.getElementById("events-export").addEventListener("click", () => {
+    const params = buildEventsParams(eventsOffset);
+    window.open(`/v1/admin/bot-events.csv?${params.toString()}`, "_blank");
   });
   document.getElementById("link-clients").addEventListener("click", async (e) => {
     e.preventDefault();

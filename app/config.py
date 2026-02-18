@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     max_oauth_scope: str = "openid profile"
     max_oauth_state_ttl_seconds: int = 600
 
+    ecom_stats_enabled: bool = False
+    ecom_stats_base_url: str = ""
+    ecom_stats_path: str = "/admin/stats"
+    ecom_stats_token: str = ""
+    ecom_stats_timeout_seconds: int = 8
+
     auth_jwt_secret: str = "change_me"
     auth_jwt_ttl_seconds: int = 604800
     web_guest_auth_enabled: bool = False
