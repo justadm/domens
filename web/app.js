@@ -228,6 +228,9 @@ let copilotPendingToken = "";
 let copilotSendInFlight = false;
 let cabinetAccessOffset = 0;
 let cabinetEventsOffset = 0;
+let adminModeFocused = false;
+const ADMIN_MODE = /^\/admin\/?$/.test(window.location.pathname)
+  || new URLSearchParams(window.location.search).get("mode") === "admin";
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -1007,6 +1010,16 @@ async function refreshCabinet() {
     renderCabinetAdmin(cabinetState.adminUsers, cabinetState.roles);
     renderCabinetAdminEvents(cabinetState.adminEvents);
     renderCabinetAccessEvents(cabinetState.accessAudit);
+    if (ADMIN_MODE && !adminModeFocused) {
+      const adminCard = document.getElementById("cabinet-admin-card");
+      if (window.location.hash !== "#cabinet-section") {
+        window.location.hash = "cabinet-section";
+      }
+      if (adminCard && !adminCard.classList.contains("hidden")) {
+        adminCard.scrollIntoView({ behavior: "smooth", block: "start" });
+        adminModeFocused = true;
+      }
+    }
   } catch (err) {
     setCabinetMessage(String(err));
   }
