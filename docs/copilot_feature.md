@@ -56,6 +56,7 @@ Env flags:
 - `COPILOT_LLM_PROVIDER` - `ollama` or `openrouter`.
 - `COPILOT_LLM_TIMEOUT_SECONDS` - timeout for model call.
 - `COPILOT_LLM_CONFIDENCE_THRESHOLD` - minimum confidence to trust LLM output.
+- `COPILOT_LLM_MAX_PARALLEL` - max concurrent LLM calls (CPU protection).
 - `COPILOT_LLM_CHAT_CONTEXT_MESSAGES` - recent messages count used for conversational replies.
 - `COPILOT_LLM_REPLY_MAX_CHARS` - max response length before trimming.
 - `COPILOT_LLM_OLLAMA_BASE_URL`, `COPILOT_LLM_OLLAMA_MODEL` - local Ollama settings.

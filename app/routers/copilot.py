@@ -28,6 +28,7 @@ DOMAIN_PATTERN = re.compile(r"\b[a-z0-9][a-z0-9-]{0,61}\.[a-z0-9.-]{2,24}\b", re
 _RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 _INFLIGHT_REQUESTS = 0
 _INFLIGHT_LOCK = asyncio.Lock()
+_LLM_SEMAPHORE = asyncio.Semaphore(max(1, int(settings.copilot_llm_max_parallel)))
 
 
 async def _inc_inflight() -> int:
@@ -75,6 +76,7 @@ def get_copilot_runtime_status() -> dict:
         "fallback_enabled": bool(settings.copilot_llm_fallback_enabled),
         "fallback_model": str(settings.copilot_llm_fallback_model or ""),
         "confidence_threshold": float(settings.copilot_llm_confidence_threshold),
+        "llm_max_parallel": int(settings.copilot_llm_max_parallel),
         "rate_limit": {
             "window_seconds": int(settings.copilot_rate_limit_window_seconds),
             "requests": int(settings.copilot_rate_limit_requests),
@@ -536,7 +538,8 @@ async def process_copilot_message(
     llm_allowed = bool(settings.copilot_llm_nlu_enabled and not degrade_reason)
     if llm_allowed:
         try:
-            llm_result = await detect_intent_with_llm(message=message_text, mode=mode, lang=lang)
+            async with _LLM_SEMAPHORE:
+                llm_result = await detect_intent_with_llm(message=message_text, mode=mode, lang=lang)
             if llm_result:
                 llm_meta = {
                     "provider": llm_result.provider,
@@ -780,12 +783,13 @@ async def process_copilot_message(
         )
         context_used = len(history)
         try:
-            llm_reply = await generate_chat_reply_with_llm(
-                message=message_text,
-                intent=intent,
-                lang=lang,
-                history=history,
-            )
+            async with _LLM_SEMAPHORE:
+                llm_reply = await generate_chat_reply_with_llm(
+                    message=message_text,
+                    intent=intent,
+                    lang=lang,
+                    history=history,
+                )
             if llm_reply and llm_reply.reply:
                 reply = llm_reply.reply
                 reply_style = "natural"

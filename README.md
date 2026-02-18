@@ -107,6 +107,7 @@ make down
 - Telegram/MAX паритет для Copilot:
   - Telegram: `/ask`, `/chat`, `/confirm <cp_token>`, `/cancel <cp_token>`
   - MAX: `/ask`, `/chat`, `/confirm <cp_token>`, `/cancel <cp_token>`
+- Telegram admin команды: `/admin roles|users|access-events|grant|revoke`.
 - Язык Copilot-ответов выбирается по `locale` пользователя (`en*` -> EN, иначе RU).
 - Веб-язык автоматически подхватывается из `locale` профиля, пока пользователь вручную не сменит язык в селекторе.
 - Подробный аудит хранится в таблицах:

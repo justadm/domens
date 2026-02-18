@@ -5,8 +5,11 @@
 - Env admins (`TELEGRAM_ADMIN_USER_IDS`) are still supported and synced to DB on startup.
 - Monitoring sends admin copy of alerts to configured admin Telegram users.
 - Cabinet/API expose admin-only operations for role management.
-- Telegram bot supports admin commands: `/admin roles|users|grant|revoke`.
+- Telegram bot supports admin commands: `/admin roles|users|access-events|grant|revoke`.
 - Audit trail for role operations is persisted in `access_events`.
+- Role hierarchy guard is active:
+  - only `superadmin` can grant/revoke `admin` and `superadmin`;
+  - `admin` can manage only `viewer|operator`.
 
 ## Remaining gaps
 - Fine-grained permissions matrix is not implemented yet (`permissions`, `role_permissions`).
@@ -20,6 +23,7 @@
 - `/admin grant <telegram_user_id> <role>` - grant role.
 - `/admin revoke <telegram_user_id> <role>` - revoke role.
 - `/admin roles` - show available roles.
+- `/admin access-events [action] [limit]` - latest access audit events.
 
 ## Migration plan
 1. Alembic migration with `roles` + `user_roles`.

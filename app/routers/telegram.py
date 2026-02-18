@@ -51,6 +51,13 @@ def _is_admin_user(user_id: str) -> bool:
     return store.has_any_role(safe_uid, ["admin", "superadmin"])
 
 
+def _can_manage_role(user_id: str, role: str) -> bool:
+    safe_role = str(role).strip().lower()
+    if safe_role not in {"admin", "superadmin"}:
+        return True
+    return store.has_any_role(str(user_id).strip(), ["superadmin"])
+
+
 def _short_rule(rule_id: str) -> str:
     return rule_id.split("-", 1)[0]
 
@@ -242,6 +249,7 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
             "\n\nАдмин-команды:\n"
             "/admin roles - список ролей\n"
             "/admin users [search] - пользователи и роли\n"
+            "/admin access-events [action] [limit] - аудит доступа\n"
             "/admin grant <telegram_user_id> <role>\n"
             "/admin revoke <telegram_user_id> <role>"
         )
@@ -572,7 +580,7 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
 
     parts = text.split(maxsplit=3)
     if len(parts) < 2:
-        await send_telegram_text(chat_id, "Формат: /admin roles|users|grant|revoke ...")
+        await send_telegram_text(chat_id, "Формат: /admin roles|users|access-events|grant|revoke ...")
         return {"ok": True, "action": "admin_bad_format"}
 
     action = parts[1].strip().lower()
@@ -609,6 +617,37 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
         )
         return {"ok": True, "action": "admin_users", "count": len(rows)}
 
+    if action == "access-events":
+        action_filter = parts[2].strip().lower() if len(parts) >= 3 else None
+        limit_raw = parts[3].strip() if len(parts) >= 4 else "10"
+        try:
+            limit = max(1, min(int(limit_raw), 30))
+        except ValueError:
+            await send_telegram_text(chat_id, "Лимит должен быть числом. Пример: /admin access-events grant_role 10")
+            return {"ok": True, "action": "admin_access_events_bad_limit"}
+
+        rows = store.list_access_events(limit=limit, action=action_filter or None)
+        if not rows:
+            await send_telegram_text(chat_id, "События не найдены.")
+            return {"ok": True, "action": "admin_access_events_empty"}
+
+        lines = [f"Аудит доступа (до {len(rows)}):"]
+        for row in rows:
+            created_at = str(row.get("created_at") or "")[:19].replace("T", " ")
+            actor = str(row.get("actor_telegram_user_id") or "-")
+            target = str(row.get("target_telegram_user_id") or "-")
+            role = str(row.get("role_code") or "-")
+            event_action = str(row.get("action") or "-")
+            lines.append(f"- {created_at} | {event_action} | {actor}->{target} | role={role}")
+        await send_telegram_text(chat_id, "\n".join(lines))
+        store.log_bot_event(
+            "admin_access_events",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"action": action_filter or "", "limit": limit},
+        )
+        return {"ok": True, "action": "admin_access_events", "count": len(rows)}
+
     if action in {"grant", "revoke"}:
         if len(parts) < 4:
             await send_telegram_text(chat_id, f"Формат: /admin {action} <telegram_user_id> <role>")
@@ -620,6 +659,9 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
         if not target_uid or role not in allowed:
             await send_telegram_text(chat_id, "Роль должна быть одной из: viewer, operator, admin, superadmin.")
             return {"ok": True, "action": f"admin_{action}_invalid_role"}
+        if not _can_manage_role(user_id, role):
+            await send_telegram_text(chat_id, "Только superadmin может выдавать/снимать роли admin/superadmin.")
+            return {"ok": True, "action": f"admin_{action}_forbidden_role_manage"}
 
         if action == "grant":
             ok = store.grant_role(target_uid, role, granted_by=f"tg_admin:{user_id}")

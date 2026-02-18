@@ -57,3 +57,41 @@ def test_admin_copilot_runtime(monkeypatch) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"]["provider"] == "ollama"
+
+
+def test_admin_cannot_grant_superadmin(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+    monkeypatch.setattr(admin_router.store, "has_any_role", lambda _uid, _roles: False)
+    monkeypatch.setattr(admin_router.store, "grant_role", lambda *_args, **_kwargs: True)
+
+    response = client.post(
+        "/v1/admin/grant",
+        json={"telegram_user_id": "42", "role": "superadmin"},
+    )
+    assert response.status_code == 403
+
+
+def test_superadmin_can_grant_admin(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        admin_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["superadmin"], is_admin=True),
+    )
+    monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
+    monkeypatch.setattr(admin_router.store, "has_any_role", lambda _uid, _roles: True)
+    monkeypatch.setattr(admin_router.store, "grant_role", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(admin_router.store, "log_bot_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(admin_router.store, "log_access_event", lambda *args, **kwargs: None)
+
+    response = client.post(
+        "/v1/admin/grant",
+        json={"telegram_user_id": "42", "role": "admin"},
+    )
+    assert response.status_code == 200

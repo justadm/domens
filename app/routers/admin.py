@@ -60,6 +60,15 @@ def _require_admin(request: Request) -> AuthUserResponse:
     return user
 
 
+def _require_role_manage_permission(actor_telegram_user_id: str, role: str) -> None:
+    safe_role = str(role).strip().lower()
+    if safe_role not in {"admin", "superadmin"}:
+        return
+    if store.has_any_role(actor_telegram_user_id, ["superadmin"]):
+        return
+    raise HTTPException(status_code=403, detail="only superadmin can manage admin/superadmin roles")
+
+
 @router.get("/roles", response_model=AdminRolesResponse)
 async def list_roles(request: Request) -> AdminRolesResponse:
     _require_admin(request)
@@ -79,6 +88,7 @@ async def grant_role(payload: RoleAssignRequest, request: Request) -> RoleAssign
     role = payload.role.strip().lower()
     if role not in {"viewer", "operator", "admin", "superadmin"}:
         raise HTTPException(status_code=400, detail="invalid role")
+    _require_role_manage_permission(admin.telegram_user_id, role)
     ok = store.grant_role(uid, role, granted_by=f"admin:{admin.telegram_user_id}")
     if not ok:
         raise HTTPException(status_code=400, detail="failed to grant role")
@@ -104,6 +114,7 @@ async def revoke_role(payload: RoleAssignRequest, request: Request) -> RoleAssig
     role = payload.role.strip().lower()
     if role not in {"viewer", "operator", "admin", "superadmin"}:
         raise HTTPException(status_code=400, detail="invalid role")
+    _require_role_manage_permission(admin.telegram_user_id, role)
     ok = store.revoke_role(uid, role)
     if not ok:
         raise HTTPException(status_code=404, detail="role assignment not found")
