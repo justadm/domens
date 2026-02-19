@@ -5,9 +5,10 @@ import { apiRequest } from '@/services/api';
 
 const BASE_MENU: NavItem[] = [
   { key: 'dashboard', label: 'Дашборд', to: '/lk' },
+  { key: 'domains', label: 'Домены', to: '/lk/domens', requires: 'cabinet.read' },
+  { key: 'orders', label: 'Заказы', to: '/lk/orders', requires: 'cabinet.read' },
   { key: 'watch', label: 'Watch-правила', to: '/lk/watch', requires: 'watch.manage' },
   { key: 'alerts', label: 'Алерты', to: '/lk/alerts', requires: 'alerts.manage' },
-  { key: 'registrations', label: 'Регистрации', to: '/lk/registrations', requires: 'copilot.register_domain' },
   { key: 'history', label: 'История', to: '/lk/history', requires: 'cabinet.read' },
   { key: 'admin', label: 'Админ', to: '/admin', requires: 'admin.panel.read' },
 ];

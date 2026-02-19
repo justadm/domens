@@ -528,13 +528,19 @@ class PostgresStore:
             alert.acknowledged_at = datetime.now(timezone.utc)
             session.commit()
 
-    def create_order(self, domain: str) -> RegistrationOrder:
+    def create_order(
+        self,
+        domain: str,
+        requested_by: str | None = None,
+        request_payload: dict | None = None,
+    ) -> RegistrationOrder:
         with self._session() as session:
             domain_model = self._get_or_create_domain(session, domain)
             order = RegistrationOrderModel(
                 domain_id=domain_model.id,
+                requested_by=str(requested_by).strip() if requested_by else None,
                 status=RegistrationStatus.QUEUED,
-                request_payload={},
+                request_payload=request_payload or {},
             )
             session.add(order)
             session.commit()
@@ -545,6 +551,242 @@ class PostgresStore:
                 status=order.status.value,
                 created_at=order.created_at,
             )
+
+    def list_user_registration_orders_page(
+        self,
+        telegram_user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> dict:
+        safe_uid = str(telegram_user_id).strip()
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        target_status = (status or "").strip().lower()
+        q = (search or "").strip().lower()
+
+        if not safe_uid:
+            return {
+                "items": [],
+                "total": 0,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": None,
+                "prev_offset": None,
+            }
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return {
+                    "items": [],
+                    "total": 0,
+                    "limit": safe_limit,
+                    "offset": safe_offset,
+                    "next_offset": None,
+                    "prev_offset": None,
+                }
+
+            ownership_filters = [RegistrationOrderModel.requested_by == safe_uid]
+            if user.telegram_chat_id:
+                ownership_filters.append(
+                    exists(
+                        select(AlertModel.id)
+                        .where(AlertModel.domain_id == RegistrationOrderModel.domain_id)
+                        .where(AlertModel.telegram_chat_id == user.telegram_chat_id)
+                    )
+                )
+            filters = [or_(*ownership_filters)]
+            if target_status:
+                filters.append(func.lower(func.cast(RegistrationOrderModel.status, Text)) == target_status)
+            if q:
+                filters.append(
+                    or_(
+                        func.lower(DomainModel.fqdn).contains(q),
+                        func.lower(func.coalesce(RegistrationOrderModel.requested_by, "")).contains(q),
+                        func.lower(func.coalesce(RegistrationOrderModel.error_message, "")).contains(q),
+                    )
+                )
+
+            base_query = (
+                select(RegistrationOrderModel, DomainModel)
+                .join(DomainModel, DomainModel.id == RegistrationOrderModel.domain_id)
+                .where(and_(*filters))
+            )
+            total_query = (
+                select(func.count())
+                .select_from(RegistrationOrderModel)
+                .join(DomainModel, DomainModel.id == RegistrationOrderModel.domain_id)
+                .where(and_(*filters))
+            )
+
+            total = int(session.execute(total_query).scalar() or 0)
+            rows = session.execute(
+                base_query.order_by(desc(RegistrationOrderModel.created_at)).offset(safe_offset).limit(safe_limit)
+            ).all()
+
+            items: list[dict] = []
+            for order, domain in rows:
+                items.append(
+                    {
+                        "id": str(order.id),
+                        "domain": domain.fqdn,
+                        "status": order.status.value,
+                        "requested_by": order.requested_by,
+                        "error_message": order.error_message,
+                        "created_at": order.created_at.isoformat(),
+                        "updated_at": order.updated_at.isoformat(),
+                        "completed_at": order.completed_at.isoformat() if order.completed_at else None,
+                    }
+                )
+
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
+
+    def list_user_domains_page(
+        self,
+        telegram_user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        search: str | None = None,
+        tld: str | None = None,
+    ) -> dict:
+        safe_uid = str(telegram_user_id).strip()
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        target_status = (status or "").strip().lower()
+        target_tld = (tld or "").strip().lower().lstrip(".")
+        q = (search or "").strip().lower()
+
+        if not safe_uid:
+            return {
+                "items": [],
+                "total": 0,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": None,
+                "prev_offset": None,
+            }
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return {
+                    "items": [],
+                    "total": 0,
+                    "limit": safe_limit,
+                    "offset": safe_offset,
+                    "next_offset": None,
+                    "prev_offset": None,
+                }
+
+            ownership_filters = [
+                exists(
+                    select(RegistrationOrderModel.id)
+                    .where(RegistrationOrderModel.domain_id == DomainModel.id)
+                    .where(RegistrationOrderModel.requested_by == safe_uid)
+                )
+            ]
+            if user.telegram_chat_id:
+                ownership_filters.append(
+                    exists(
+                        select(AlertModel.id)
+                        .where(AlertModel.domain_id == DomainModel.id)
+                        .where(AlertModel.telegram_chat_id == user.telegram_chat_id)
+                    )
+                )
+            filters = [or_(*ownership_filters)]
+            if target_status:
+                filters.append(func.lower(func.cast(DomainModel.current_status, Text)) == target_status)
+            if target_tld:
+                filters.append(func.lower(DomainModel.tld) == target_tld)
+            if q:
+                filters.append(
+                    or_(
+                        func.lower(DomainModel.fqdn).contains(q),
+                        func.lower(func.coalesce(DomainModel.source, "")).contains(q),
+                    )
+                )
+
+            total_query = select(func.count()).select_from(DomainModel).where(and_(*filters))
+            total = int(session.execute(total_query).scalar() or 0)
+
+            rows = session.execute(
+                select(DomainModel)
+                .where(and_(*filters))
+                .order_by(desc(DomainModel.updated_at))
+                .offset(safe_offset)
+                .limit(safe_limit)
+            ).scalars()
+            domain_rows = list(rows)
+
+            if not domain_rows:
+                return {
+                    "items": [],
+                    "total": total,
+                    "limit": safe_limit,
+                    "offset": safe_offset,
+                    "next_offset": None,
+                    "prev_offset": None,
+                }
+
+            domain_ids = [item.id for item in domain_rows]
+            latest_order_rows = session.execute(
+                select(RegistrationOrderModel.domain_id, RegistrationOrderModel.status, RegistrationOrderModel.created_at)
+                .where(RegistrationOrderModel.domain_id.in_(domain_ids))
+                .order_by(desc(RegistrationOrderModel.created_at))
+            ).all()
+            latest_order_map: dict[uuid.UUID, tuple[str, datetime] | None] = {}
+            for domain_id, order_status, created_at in latest_order_rows:
+                if domain_id in latest_order_map:
+                    continue
+                latest_order_map[domain_id] = (order_status.value, created_at)
+
+            items: list[dict] = []
+            for domain in domain_rows:
+                latest_order = latest_order_map.get(domain.id)
+                items.append(
+                    {
+                        "id": str(domain.id),
+                        "fqdn": domain.fqdn,
+                        "tld": domain.tld,
+                        "score": float(domain.score) if domain.score is not None else None,
+                        "current_status": domain.current_status.value,
+                        "source": domain.source,
+                        "status_checked_at": domain.status_checked_at.isoformat() if domain.status_checked_at else None,
+                        "drop_time_estimated_at": domain.drop_time_estimated_at.isoformat()
+                        if domain.drop_time_estimated_at
+                        else None,
+                        "updated_at": domain.updated_at.isoformat(),
+                        "latest_order_status": latest_order[0] if latest_order else None,
+                        "latest_order_created_at": latest_order[1].isoformat() if latest_order else None,
+                    }
+                )
+
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
 
     def get_latest_order_by_domain(self, domain: str) -> RegistrationOrder | None:
         with self._session() as session:
@@ -854,6 +1096,19 @@ class PostgresStore:
                 disclaimer_accepted_at=user.disclaimer_accepted_at,
                 disclaimer_version=user.disclaimer_version,
             )
+
+    def get_telegram_user_id_by_chat_id(self, telegram_chat_id: str) -> str | None:
+        safe_chat_id = str(telegram_chat_id).strip()
+        if not safe_chat_id:
+            return None
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel)
+                .where(TelegramUserModel.telegram_chat_id == safe_chat_id)
+                .order_by(desc(TelegramUserModel.updated_at))
+                .limit(1)
+            ).scalar_one_or_none()
+            return user.telegram_user_id if user else None
 
     def ensure_base_roles(self) -> None:
         base_roles = {

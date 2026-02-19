@@ -54,3 +54,56 @@ def test_cabinet_profile_includes_permissions_and_capabilities(monkeypatch) -> N
     assert data["capabilities"]["copilot_register_domain"] is True
     assert data["is_admin"] is False
 
+
+def test_cabinet_domains_page(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_domains_page",
+        lambda **_kwargs: {
+            "total": 1,
+            "limit": 50,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [{"id": "d1", "fqdn": "example.ru", "current_status": "available"}],
+        },
+    )
+
+    response = client.get("/v1/cabinet/domains?limit=50&offset=0")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["fqdn"] == "example.ru"
+
+
+def test_cabinet_orders_page(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_registration_orders_page",
+        lambda **_kwargs: {
+            "total": 1,
+            "limit": 50,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [{"id": "o1", "domain": "example.ru", "status": "queued"}],
+        },
+    )
+
+    response = client.get("/v1/cabinet/orders?limit=50&offset=0")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["domain"] == "example.ru"

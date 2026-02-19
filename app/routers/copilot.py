@@ -999,7 +999,11 @@ async def process_copilot_confirm(user_id: str, confirmation_token: str, decisio
             domain = str(action_payload.get("domain") or "").strip().lower()
             if not domain:
                 raise RuntimeError("domain is empty")
-            order = store.create_order(domain)
+            order = store.create_order(
+                domain,
+                requested_by=user_id,
+                request_payload={"source": "copilot_confirm", "conversation_id": item["conversation_id"]},
+            )
             from app.routers.registrations import execute_registration
 
             final = await execute_registration(order.order_id)

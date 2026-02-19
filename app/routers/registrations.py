@@ -31,7 +31,12 @@ async def confirm_registration(
             )
 
     store.mark_alert_acknowledged(payload.confirmation_token)
-    order = store.create_order(alert.domain)
+    requested_by = store.get_telegram_user_id_by_chat_id(alert.telegram_chat_id) if alert.telegram_chat_id else None
+    order = store.create_order(
+        alert.domain,
+        requested_by=requested_by,
+        request_payload={"source": "confirm_token", "confirmation_token": payload.confirmation_token},
+    )
     return ConfirmRegistrationResponse(
         order_id=order.order_id,
         domain=order.domain,

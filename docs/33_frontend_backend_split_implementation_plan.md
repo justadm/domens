@@ -7,6 +7,9 @@
 - Этап 1: выполнен.
 - Этап 2: выполнен для ключевых разделов LK/Admin:
   - LK: `/lk/watch`, `/lk/alerts`, `/lk/history` переведены на реальные `/v1/cabinet/*` API.
+  - LK: добавлены `/lk/domens` и `/lk/orders` (фильтры, поиск, пагинация) через новые API:
+    - `GET /v1/cabinet/domains`
+    - `GET /v1/cabinet/orders`
   - Admin: `/admin/users`, `/admin/events` переведены на реальные `/v1/admin/*` API + CSV export.
 - Этап 3: выполнен (split nginx + frontend container `28200` в проде).
 - Этап 4: в работе (legacy frontend backend пока оставлен как fallback).

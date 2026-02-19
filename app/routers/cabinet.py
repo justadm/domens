@@ -69,6 +69,24 @@ class CabinetHistoryResponse(BaseModel):
     items: list[dict]
 
 
+class CabinetDomainsPageResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
+    items: list[dict]
+
+
+class CabinetOrdersPageResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
+    items: list[dict]
+
+
 def _require_user(request: Request) -> AuthUserResponse:
     user = get_authenticated_user(request)
     if not user:
@@ -287,3 +305,43 @@ async def cabinet_history(
             query_text=search,
         )
     )
+
+
+@router.get("/domains", response_model=CabinetDomainsPageResponse)
+async def cabinet_domains(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    search: str | None = None,
+    tld: str | None = None,
+) -> CabinetDomainsPageResponse:
+    auth_user = _require_user(request)
+    page = store.list_user_domains_page(
+        telegram_user_id=auth_user.telegram_user_id,
+        limit=limit,
+        offset=offset,
+        status=status,
+        search=search,
+        tld=tld,
+    )
+    return CabinetDomainsPageResponse(**page)
+
+
+@router.get("/orders", response_model=CabinetOrdersPageResponse)
+async def cabinet_orders(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    search: str | None = None,
+) -> CabinetOrdersPageResponse:
+    auth_user = _require_user(request)
+    page = store.list_user_registration_orders_page(
+        telegram_user_id=auth_user.telegram_user_id,
+        limit=limit,
+        offset=offset,
+        status=status,
+        search=search,
+    )
+    return CabinetOrdersPageResponse(**page)
