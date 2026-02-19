@@ -2,6 +2,15 @@
 
 Дата: 2026-02-19
 
+## Статус на 2026-02-19
+
+- Этап 1: выполнен.
+- Этап 2: выполнен для ключевых разделов LK/Admin:
+  - LK: `/lk/watch`, `/lk/alerts`, `/lk/history` переведены на реальные `/v1/cabinet/*` API.
+  - Admin: `/admin/users`, `/admin/events` переведены на реальные `/v1/admin/*` API + CSV export.
+- Этап 3: выполнен (split nginx + frontend container `28200` в проде).
+- Этап 4: в работе (legacy frontend backend пока оставлен как fallback).
+
 ## Цель
 
 Перейти от встроенного frontend (`web/*` в backend) к классической схеме:
