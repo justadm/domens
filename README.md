@@ -32,6 +32,26 @@ uvicorn app.main:app --reload --port 8080
 Swagger:
 - http://127.0.0.1:8080/docs
 
+## Frontend (Vue, отдельно от backend)
+- Новый фронт-бутстрап находится в `frontend/`.
+- Стек: Vue 3 + Vite + Pinia + Vue Router.
+- Единый shell для LK/Admin, отличия по RBAC.
+
+Запуск:
+```bash
+cd /Users/just/projects/domens/frontend
+npm install
+npm run dev
+```
+
+Опционально:
+```bash
+VITE_API_BASE_URL=https://idns.devee.ru npm run dev
+```
+
+План поэтапной миграции со старого `web/`:
+- `docs/frontend_vue_migration_plan.md`
+
 ## Запуск в Docker
 ```bash
 cd /Users/just/projects/domens
