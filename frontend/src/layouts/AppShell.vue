@@ -23,12 +23,16 @@
           class="spark-nav-item"
           active-class="active"
         >
+          <span class="spark-nav-icon" :class="`icon-${item.key}`"></span>
           {{ item.label }}
         </RouterLink>
 
         <template v-if="adminVisible">
           <p class="spark-nav-caption">Admin</p>
-          <RouterLink to="/admin" class="spark-nav-item" active-class="active">Админ</RouterLink>
+          <RouterLink to="/admin" class="spark-nav-item" active-class="active">
+            <span class="spark-nav-icon icon-admin"></span>
+            Админ
+          </RouterLink>
           <RouterLink to="/admin/users" class="spark-nav-sub" active-class="active-sub">Пользователи</RouterLink>
           <RouterLink to="/admin/events" class="spark-nav-sub" active-class="active-sub">События</RouterLink>
         </template>
@@ -224,6 +228,7 @@ async function onLogout() {
   display: flex;
   align-items: center;
   font-size: 18px;
+  gap: 10px;
 }
 
 .spark-nav-sub {
@@ -237,6 +242,22 @@ async function onLogout() {
   font-size: 16px;
   border: 1px dashed transparent;
 }
+
+.spark-nav-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: #c4d3ef;
+  flex: 0 0 18px;
+}
+
+.spark-nav-icon.icon-dashboard { background: #9cb9ed; }
+.spark-nav-icon.icon-domains { background: #6ea8ff; }
+.spark-nav-icon.icon-orders { background: #78c2b8; }
+.spark-nav-icon.icon-watch { background: #9e94ea; }
+.spark-nav-icon.icon-alerts { background: #f0a36e; }
+.spark-nav-icon.icon-history { background: #8aa6cf; }
+.spark-nav-icon.icon-admin { background: #5e86d6; }
 
 .spark-nav-item.active {
   color: #255eb1;

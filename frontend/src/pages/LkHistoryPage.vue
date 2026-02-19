@@ -59,7 +59,6 @@ onMounted(load);
 .list { display: grid; gap: 8px; }
 .item { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 10px; }
 .head { display: flex; justify-content: space-between; margin-bottom: 8px; }
-input { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 pre { margin: 0; overflow: auto; }
 .error { color: #b42318; }
 @media (max-width: 1000px) { .row { grid-template-columns: 1fr 1fr; } }

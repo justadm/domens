@@ -126,11 +126,7 @@ onMounted(() => load(0));
 
 <style scoped>
 .row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
-.pager { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-table { width: 100%; border-collapse: collapse; }
-th, td { border: 1px solid var(--line); padding: 8px; vertical-align: top; text-align: left; }
 pre { margin: 0; max-width: 420px; overflow: auto; }
-input, select { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 .error { color: #b42318; }
 @media (max-width: 1400px) { .row { grid-template-columns: 1fr 1fr; } }
 </style>

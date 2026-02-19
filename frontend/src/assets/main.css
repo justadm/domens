@@ -27,18 +27,103 @@ a {
 
 .btn {
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  padding: 8px 12px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+  padding: 8px 14px;
   cursor: pointer;
   font-weight: 700;
+  color: #2a4065;
+}
+
+.btn:hover {
+  border-color: #b8c8e6;
+  background: #f4f8ff;
 }
 
 .page-card {
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
-  padding: 14px;
+  padding: 16px;
+}
+
+.page-card h2 {
+  margin-top: 0;
+  font-size: 42px;
+  letter-spacing: -0.01em;
+}
+
+.page-card h3 {
+  letter-spacing: -0.01em;
+}
+
+.page-card input,
+.page-card select,
+.page-card textarea {
+  border: 1px solid #c9d5ea;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #233a61;
+  outline: none;
+}
+
+.page-card input:focus,
+.page-card select:focus,
+.page-card textarea:focus {
+  border-color: #6e97dd;
+  box-shadow: 0 0 0 3px rgba(84, 134, 214, 0.14);
+}
+
+.page-card table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid #d6e0f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.page-card th {
+  background: #f0f5fd;
+  color: #243b61;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.page-card th,
+.page-card td {
+  border-bottom: 1px solid #dde5f2;
+  border-right: 1px solid #dde5f2;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.page-card th:last-child,
+.page-card td:last-child {
+  border-right: none;
+}
+
+.page-card tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.page-card tbody tr:nth-child(even) {
+  background: #fbfdff;
+}
+
+.page-card .row {
+  display: grid;
+  gap: 10px;
+}
+
+.page-card .pager {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
 }
 
 .kpi-grid {

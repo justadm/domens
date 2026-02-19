@@ -99,9 +99,6 @@ onMounted(load);
 <style scoped>
 .row { display: grid; grid-template-columns: 1fr auto auto 1fr auto auto; gap: 8px; margin-bottom: 10px; }
 .error { color: #b42318; }
-table { width: 100%; border-collapse: collapse; }
-th, td { border: 1px solid var(--line); padding: 8px; }
-input { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 @media (max-width: 1100px) {
   .row { grid-template-columns: 1fr 1fr; }
 }
