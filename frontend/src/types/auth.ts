@@ -7,6 +7,7 @@ export interface AuthUser {
   locale?: string | null;
   is_admin?: boolean;
   capabilities?: CapabilityMap;
+  permissions?: string[];
 }
 
 export interface AuthMeResponse {

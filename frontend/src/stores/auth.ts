@@ -19,10 +19,23 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null);
 
   const capabilities = computed(() => user.value?.capabilities || {});
+  const permissions = computed(() => user.value?.permissions || []);
+
+  function toCapabilityKey(code: string): string {
+    return code.replace(/\./g, '_').replace(/-/g, '_').trim().toLowerCase();
+  }
 
   function hasCapability(code: string | undefined): boolean {
     if (!code) return true;
-    return Boolean(capabilities.value[code] || (code === 'admin.panel.read' && user.value?.is_admin));
+    const raw = code.trim();
+    const snake = toCapabilityKey(raw);
+    return Boolean(
+      capabilities.value[raw] ||
+        capabilities.value[snake] ||
+        permissions.value.includes(raw) ||
+        permissions.value.includes(snake) ||
+        (raw === 'admin.panel.read' && user.value?.is_admin),
+    );
   }
 
   const menu = computed(() => BASE_MENU.filter((item) => hasCapability(item.requires)));
