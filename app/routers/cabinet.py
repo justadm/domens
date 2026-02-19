@@ -5,9 +5,14 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
+from app.schemas import ExecuteRegistrationResponse
+from app.services.domain_checker import infer_status
+from app.services.domain_scoring import score_domain
+from app.services.timeweb_api import TimewebApiClient
 from app.state import store
 
 router = APIRouter(prefix="/v1/cabinet", tags=["cabinet"])
+timeweb_client = TimewebApiClient(base_url=settings.timeweb_api_base_url, api_token=settings.timeweb_api_token)
 
 
 class TelegramSubscriptionToggleRequest(BaseModel):
@@ -85,6 +90,29 @@ class CabinetOrdersPageResponse(BaseModel):
     next_offset: int | None = None
     prev_offset: int | None = None
     items: list[dict]
+
+
+class CabinetDomainDetailResponse(BaseModel):
+    item: dict
+
+
+class CabinetOrderDetailResponse(BaseModel):
+    item: dict
+
+
+class CabinetOrderActionResponse(BaseModel):
+    ok: bool
+    order_id: str
+    status: str
+    result: dict | None = None
+
+
+class CabinetDomainRecheckResponse(BaseModel):
+    ok: bool
+    domain_id: str
+    status: str
+    score: float
+    drop_time_estimated_at: str | None = None
 
 
 def _require_user(request: Request) -> AuthUserResponse:
@@ -345,3 +373,93 @@ async def cabinet_orders(
         search=search,
     )
     return CabinetOrdersPageResponse(**page)
+
+
+@router.get("/domains/{domain_id}", response_model=CabinetDomainDetailResponse)
+async def cabinet_domain_details(domain_id: str, request: Request) -> CabinetDomainDetailResponse:
+    auth_user = _require_user(request)
+    item = store.get_user_domain_details(auth_user.telegram_user_id, domain_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="domain not found")
+    return CabinetDomainDetailResponse(item=item)
+
+
+@router.post("/domains/{domain_id}/recheck", response_model=CabinetDomainRecheckResponse)
+async def cabinet_domain_recheck(domain_id: str, request: Request) -> CabinetDomainRecheckResponse:
+    auth_user = _require_user(request)
+    item = store.get_user_domain_details(auth_user.telegram_user_id, domain_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="domain not found")
+    fqdn = str(item.get("fqdn") or "").strip().lower()
+    if not fqdn:
+        raise HTTPException(status_code=400, detail="invalid domain")
+
+    status, eta = await infer_status(fqdn, timeweb_client=timeweb_client)
+    score = score_domain(fqdn)
+    store.upsert_domain_snapshot(
+        fqdn=fqdn,
+        status=status,
+        score=score,
+        drop_time_estimated_at=eta,
+        source="cabinet_recheck",
+        provider="timeweb",
+        raw_payload={"requested_by": auth_user.telegram_user_id},
+    )
+    store.log_bot_event(
+        "cabinet_domain_recheck",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"domain_id": domain_id, "fqdn": fqdn, "status": status, "score": score},
+    )
+    return CabinetDomainRecheckResponse(
+        ok=True,
+        domain_id=domain_id,
+        status=status,
+        score=score,
+        drop_time_estimated_at=eta.isoformat() if eta else None,
+    )
+
+
+@router.get("/orders/{order_id}", response_model=CabinetOrderDetailResponse)
+async def cabinet_order_details(order_id: str, request: Request) -> CabinetOrderDetailResponse:
+    auth_user = _require_user(request)
+    item = store.get_user_order_details(auth_user.telegram_user_id, order_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="order not found")
+    return CabinetOrderDetailResponse(item=item)
+
+
+@router.post("/orders/{order_id}/execute", response_model=CabinetOrderActionResponse)
+async def cabinet_order_execute(order_id: str, request: Request) -> CabinetOrderActionResponse:
+    auth_user = _require_user(request)
+    item = store.get_user_order_details(auth_user.telegram_user_id, order_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="order not found")
+
+    from app.routers.registrations import execute_registration
+
+    result: ExecuteRegistrationResponse = await execute_registration(order_id)
+    store.log_bot_event(
+        "cabinet_order_execute",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"order_id": order_id, "status": result.status},
+    )
+    return CabinetOrderActionResponse(ok=True, order_id=order_id, status=result.status, result=result.model_dump())
+
+
+@router.post("/orders/{order_id}/cancel", response_model=CabinetOrderActionResponse)
+async def cabinet_order_cancel(order_id: str, request: Request) -> CabinetOrderActionResponse:
+    auth_user = _require_user(request)
+    item = store.get_user_order_details(auth_user.telegram_user_id, order_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="order not found")
+    current_status = str(item.get("status") or "").strip().lower()
+    if current_status in {"registered", "failed", "canceled"}:
+        raise HTTPException(status_code=400, detail=f"cannot cancel order in status: {current_status}")
+
+    store.set_order_status(order_id, "canceled")
+    store.log_bot_event(
+        "cabinet_order_cancel",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"order_id": order_id},
+    )
+    return CabinetOrderActionResponse(ok=True, order_id=order_id, status="canceled", result={"result": "canceled"})

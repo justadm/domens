@@ -39,7 +39,7 @@
       </thead>
       <tbody>
         <tr v-for="item in page.items" :key="item.id">
-          <td>{{ item.id }}</td>
+          <td><RouterLink :to="`/lk/orders/${item.id}`">{{ item.id }}</RouterLink></td>
           <td>{{ item.domain }}</td>
           <td>{{ item.status }}</td>
           <td>{{ item.requested_by || '-' }}</td>
@@ -57,6 +57,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import { apiRequest } from '@/services/api';
 
 type OrderItem = {

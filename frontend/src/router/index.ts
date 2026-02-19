@@ -5,10 +5,11 @@ import LandingPage from '@/pages/LandingPage.vue';
 import LkDashboardPage from '@/pages/LkDashboardPage.vue';
 import LkWatchPage from '@/pages/LkWatchPage.vue';
 import LkAlertsPage from '@/pages/LkAlertsPage.vue';
-import LkRegistrationsPage from '@/pages/LkRegistrationsPage.vue';
 import LkHistoryPage from '@/pages/LkHistoryPage.vue';
 import LkDomainsPage from '@/pages/LkDomainsPage.vue';
 import LkOrdersPage from '@/pages/LkOrdersPage.vue';
+import LkDomainDetailsPage from '@/pages/LkDomainDetailsPage.vue';
+import LkOrderDetailsPage from '@/pages/LkOrderDetailsPage.vue';
 import AdminDashboardPage from '@/pages/AdminDashboardPage.vue';
 import AdminUsersPage from '@/pages/AdminUsersPage.vue';
 import AdminEventsPage from '@/pages/AdminEventsPage.vue';
@@ -24,15 +25,11 @@ export const router = createRouter({
       children: [
         { path: '', name: 'lk-dashboard', component: LkDashboardPage },
         { path: 'domens', name: 'lk-domens', component: LkDomainsPage, meta: { capability: 'cabinet.read' } },
+        { path: 'domens/:id', name: 'lk-domens-details', component: LkDomainDetailsPage, meta: { capability: 'cabinet.read' } },
         { path: 'orders', name: 'lk-orders', component: LkOrdersPage, meta: { capability: 'cabinet.read' } },
+        { path: 'orders/:id', name: 'lk-orders-details', component: LkOrderDetailsPage, meta: { capability: 'cabinet.read' } },
         { path: 'watch', name: 'lk-watch', component: LkWatchPage, meta: { capability: 'watch.manage' } },
         { path: 'alerts', name: 'lk-alerts', component: LkAlertsPage, meta: { capability: 'alerts.manage' } },
-        {
-          path: 'registrations',
-          name: 'lk-registrations',
-          component: LkRegistrationsPage,
-          meta: { capability: 'copilot.register_domain' },
-        },
         { path: 'history', name: 'lk-history', component: LkHistoryPage, meta: { capability: 'cabinet.read' } },
       ],
     },

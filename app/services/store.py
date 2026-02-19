@@ -788,6 +788,202 @@ class PostgresStore:
                 "prev_offset": prev_offset,
             }
 
+    def get_user_order_details(self, telegram_user_id: str, order_id: str) -> dict | None:
+        safe_uid = str(telegram_user_id).strip()
+        if not safe_uid:
+            return None
+        try:
+            order_uuid = uuid.UUID(str(order_id).strip())
+        except ValueError:
+            return None
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return None
+
+            row = session.execute(
+                select(RegistrationOrderModel, DomainModel)
+                .join(DomainModel, DomainModel.id == RegistrationOrderModel.domain_id)
+                .where(RegistrationOrderModel.id == order_uuid)
+                .limit(1)
+            ).first()
+            if not row:
+                return None
+            order, domain = row
+
+            owned = bool(order.requested_by and str(order.requested_by).strip() == safe_uid)
+            if not owned and user.telegram_chat_id:
+                owned = (
+                    session.execute(
+                        select(AlertModel.id)
+                        .where(AlertModel.domain_id == order.domain_id)
+                        .where(AlertModel.telegram_chat_id == user.telegram_chat_id)
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    is not None
+                )
+            if not owned:
+                return None
+
+            status_history_rows = session.execute(
+                select(DomainStatusHistoryModel)
+                .where(DomainStatusHistoryModel.domain_id == domain.id)
+                .order_by(desc(DomainStatusHistoryModel.observed_at))
+                .limit(20)
+            ).scalars()
+            status_history = [
+                {
+                    "status": item.status.value,
+                    "provider": item.provider,
+                    "observed_at": item.observed_at.isoformat(),
+                }
+                for item in status_history_rows
+            ]
+
+            bot_events_rows = session.execute(
+                select(BotEventModel)
+                .where(BotEventModel.user_id == user.id)
+                .where(
+                    or_(
+                        func.lower(func.cast(BotEventModel.payload, Text)).contains(str(order.id).lower()),
+                        func.lower(func.cast(BotEventModel.payload, Text)).contains(domain.fqdn.lower()),
+                    )
+                )
+                .order_by(desc(BotEventModel.created_at))
+                .limit(20)
+            ).scalars()
+            events = [
+                {
+                    "id": str(event.id),
+                    "event_type": event.event_type,
+                    "payload": event.payload or {},
+                    "created_at": event.created_at.isoformat(),
+                }
+                for event in bot_events_rows
+            ]
+
+            return {
+                "id": str(order.id),
+                "domain_id": str(domain.id),
+                "domain": domain.fqdn,
+                "status": order.status.value,
+                "requested_by": order.requested_by,
+                "request_payload": order.request_payload or {},
+                "response_payload": order.response_payload or {},
+                "error_message": order.error_message,
+                "created_at": order.created_at.isoformat(),
+                "updated_at": order.updated_at.isoformat(),
+                "completed_at": order.completed_at.isoformat() if order.completed_at else None,
+                "domain_snapshot": {
+                    "current_status": domain.current_status.value,
+                    "score": float(domain.score) if domain.score is not None else None,
+                    "drop_time_estimated_at": domain.drop_time_estimated_at.isoformat()
+                    if domain.drop_time_estimated_at
+                    else None,
+                    "updated_at": domain.updated_at.isoformat(),
+                },
+                "domain_status_history": status_history,
+                "events": events,
+            }
+
+    def get_user_domain_details(self, telegram_user_id: str, domain_id: str) -> dict | None:
+        safe_uid = str(telegram_user_id).strip()
+        if not safe_uid:
+            return None
+        try:
+            domain_uuid = uuid.UUID(str(domain_id).strip())
+        except ValueError:
+            return None
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return None
+
+            domain = session.execute(select(DomainModel).where(DomainModel.id == domain_uuid).limit(1)).scalar_one_or_none()
+            if not domain:
+                return None
+
+            owned_by_order = (
+                session.execute(
+                    select(RegistrationOrderModel.id)
+                    .where(RegistrationOrderModel.domain_id == domain.id)
+                    .where(RegistrationOrderModel.requested_by == safe_uid)
+                    .limit(1)
+                ).scalar_one_or_none()
+                is not None
+            )
+            owned_by_alert = False
+            if user.telegram_chat_id:
+                owned_by_alert = (
+                    session.execute(
+                        select(AlertModel.id)
+                        .where(AlertModel.domain_id == domain.id)
+                        .where(AlertModel.telegram_chat_id == user.telegram_chat_id)
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    is not None
+                )
+            if not (owned_by_order or owned_by_alert):
+                return None
+
+            history_rows = session.execute(
+                select(DomainStatusHistoryModel)
+                .where(DomainStatusHistoryModel.domain_id == domain.id)
+                .order_by(desc(DomainStatusHistoryModel.observed_at))
+                .limit(30)
+            ).scalars()
+            status_history = [
+                {
+                    "id": str(item.id),
+                    "status": item.status.value,
+                    "provider": item.provider,
+                    "raw_payload": item.raw_payload or {},
+                    "observed_at": item.observed_at.isoformat(),
+                }
+                for item in history_rows
+            ]
+
+            order_rows = session.execute(
+                select(RegistrationOrderModel)
+                .where(RegistrationOrderModel.domain_id == domain.id)
+                .where(or_(RegistrationOrderModel.requested_by == safe_uid, RegistrationOrderModel.requested_by.is_(None)))
+                .order_by(desc(RegistrationOrderModel.created_at))
+                .limit(30)
+            ).scalars()
+            orders = [
+                {
+                    "id": str(item.id),
+                    "status": item.status.value,
+                    "requested_by": item.requested_by,
+                    "created_at": item.created_at.isoformat(),
+                    "updated_at": item.updated_at.isoformat(),
+                    "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+                }
+                for item in order_rows
+            ]
+
+            return {
+                "id": str(domain.id),
+                "fqdn": domain.fqdn,
+                "sld": domain.sld,
+                "tld": domain.tld,
+                "score": float(domain.score) if domain.score is not None else None,
+                "source": domain.source,
+                "current_status": domain.current_status.value,
+                "status_checked_at": domain.status_checked_at.isoformat() if domain.status_checked_at else None,
+                "drop_time_estimated_at": domain.drop_time_estimated_at.isoformat() if domain.drop_time_estimated_at else None,
+                "created_at": domain.created_at.isoformat(),
+                "updated_at": domain.updated_at.isoformat(),
+                "status_history": status_history,
+                "orders": orders,
+            }
+
     def get_latest_order_by_domain(self, domain: str) -> RegistrationOrder | None:
         with self._session() as session:
             row = session.execute(

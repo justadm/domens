@@ -41,7 +41,7 @@
       </thead>
       <tbody>
         <tr v-for="item in page.items" :key="item.id">
-          <td>{{ item.fqdn }}</td>
+          <td><RouterLink :to="`/lk/domens/${item.id}`">{{ item.fqdn }}</RouterLink></td>
           <td>{{ item.current_status || '-' }}</td>
           <td>{{ item.score ?? '-' }}</td>
           <td>{{ item.tld || '-' }}</td>
@@ -59,6 +59,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import { apiRequest } from '@/services/api';
 
 type DomainItem = {

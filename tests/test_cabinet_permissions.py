@@ -107,3 +107,113 @@ def test_cabinet_orders_page(monkeypatch) -> None:
     data = response.json()
     assert data["total"] == 1
     assert data["items"][0]["domain"] == "example.ru"
+
+
+def test_cabinet_domain_details(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "get_user_domain_details",
+        lambda _uid, _id: {"id": "d1", "fqdn": "example.ru"},
+    )
+
+    response = client.get("/v1/cabinet/domains/d1")
+    assert response.status_code == 200
+    assert response.json()["item"]["fqdn"] == "example.ru"
+
+
+def test_cabinet_order_details(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "get_user_order_details",
+        lambda _uid, _id: {"id": "o1", "status": "queued"},
+    )
+
+    response = client.get("/v1/cabinet/orders/o1")
+    assert response.status_code == 200
+    assert response.json()["item"]["id"] == "o1"
+
+
+def test_cabinet_order_cancel(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "get_user_order_details",
+        lambda _uid, _id: {"id": "o1", "status": "queued"},
+    )
+    monkeypatch.setattr(cabinet_router.store, "set_order_status", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cabinet_router.store, "log_bot_event", lambda *_args, **_kwargs: None)
+
+    response = client.post("/v1/cabinet/orders/o1/cancel")
+    assert response.status_code == 200
+    assert response.json()["status"] == "canceled"
+
+
+def test_cabinet_domain_recheck(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "get_user_domain_details",
+        lambda _uid, _id: {"id": "d1", "fqdn": "example.ru"},
+    )
+    async def _fake_infer_status(_domain, timeweb_client=None):
+        return ("available", None)
+
+    monkeypatch.setattr(cabinet_router, "infer_status", _fake_infer_status)
+    monkeypatch.setattr(cabinet_router, "score_domain", lambda _domain: 77)
+    monkeypatch.setattr(cabinet_router.store, "upsert_domain_snapshot", lambda **_kwargs: None)
+    monkeypatch.setattr(cabinet_router.store, "log_bot_event", lambda *_args, **_kwargs: None)
+
+    response = client.post("/v1/cabinet/domains/d1/recheck")
+    assert response.status_code == 200
+    assert response.json()["status"] == "available"
+
+
+def test_cabinet_order_execute(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "get_user_order_details",
+        lambda _uid, _id: {"id": "o1", "status": "queued"},
+    )
+    monkeypatch.setattr(cabinet_router.store, "log_bot_event", lambda *_args, **_kwargs: None)
+
+    async def _fake_execute(_order_id: str):
+        return type(
+            "R",
+            (),
+            {"status": "registered", "order_id": "o1", "model_dump": lambda self: {"status": "registered"}},
+        )()
+
+    import app.routers.registrations as reg_router
+
+    monkeypatch.setattr(reg_router, "execute_registration", _fake_execute)
+    response = client.post("/v1/cabinet/orders/o1/execute")
+    assert response.status_code == 200
+    assert response.json()["status"] == "registered"
