@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     and_,
+    asc,
     case,
     create_engine,
     desc,
@@ -1938,6 +1939,8 @@ class PostgresStore:
         query_text: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
     ) -> dict:
         safe_limit = max(1, min(int(limit), 300))
         safe_offset = max(0, int(offset))
@@ -1986,9 +1989,21 @@ class PostgresStore:
             if filters:
                 total_query = total_query.where(and_(*filters))
 
+            sort_field = str(sort_by or "created_at").strip().lower()
+            sort_direction = "asc" if str(sort_dir or "desc").strip().lower() == "asc" else "desc"
+            sort_map = {
+                "created_at": BotEventModel.created_at,
+                "event_type": func.lower(BotEventModel.event_type),
+                "telegram_user_id": func.lower(func.coalesce(user.telegram_user_id, "")),
+                "username": func.lower(func.coalesce(user.username, "")),
+                "telegram_chat_id": func.lower(func.coalesce(BotEventModel.telegram_chat_id, "")),
+            }
+            sort_expr = sort_map.get(sort_field, BotEventModel.created_at)
+            order_expr = asc(sort_expr) if sort_direction == "asc" else desc(sort_expr)
+
             total = int(session.execute(total_query).scalar() or 0)
             rows = session.execute(
-                base_query.order_by(desc(BotEventModel.created_at)).offset(safe_offset).limit(safe_limit)
+                base_query.order_by(order_expr, desc(BotEventModel.created_at)).offset(safe_offset).limit(safe_limit)
             ).all()
 
             items: list[dict] = []
@@ -2025,6 +2040,8 @@ class PostgresStore:
         registered_only: bool = False,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
+        sort_by: str = "updated_at",
+        sort_dir: str = "desc",
     ) -> dict:
         safe_limit = max(1, min(int(limit), 300))
         safe_offset = max(0, int(offset))
@@ -2067,9 +2084,20 @@ class PostgresStore:
             if filters:
                 total_query = total_query.where(and_(*filters))
 
+            sort_field = str(sort_by or "updated_at").strip().lower()
+            sort_direction = "asc" if str(sort_dir or "desc").strip().lower() == "asc" else "desc"
+            sort_map = {
+                "telegram_user_id": TelegramUserModel.telegram_user_id,
+                "username": func.lower(func.coalesce(TelegramUserModel.username, "")),
+                "created_at": TelegramUserModel.created_at,
+                "updated_at": TelegramUserModel.updated_at,
+            }
+            sort_expr = sort_map.get(sort_field, TelegramUserModel.updated_at)
+            order_expr = asc(sort_expr) if sort_direction == "asc" else desc(sort_expr)
+
             total = int(session.execute(total_query).scalar() or 0)
             users = session.execute(
-                base_query.order_by(desc(TelegramUserModel.updated_at)).offset(safe_offset).limit(safe_limit * 2)
+                base_query.order_by(order_expr, desc(TelegramUserModel.updated_at)).offset(safe_offset).limit(safe_limit * 2)
             ).scalars().all()
 
             if not users:

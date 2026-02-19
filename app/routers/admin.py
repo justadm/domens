@@ -144,6 +144,8 @@ async def list_users_activity(
     registered_only: bool = False,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
 ) -> AdminUsersActivityResponse:
     _require_admin(request)
     page = store.list_users_activity_page(
@@ -154,6 +156,8 @@ async def list_users_activity(
         registered_only=registered_only,
         created_from=created_from,
         created_to=created_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     return AdminUsersActivityResponse(**page)
 
@@ -245,6 +249,8 @@ async def list_bot_events(
     search: str | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
 ) -> AdminBotEventsResponse:
     _require_admin(request)
     page = store.list_bot_events_page(
@@ -256,6 +262,8 @@ async def list_bot_events(
         query_text=search,
         created_from=created_from,
         created_to=created_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     return AdminBotEventsResponse(**page)
 
@@ -270,6 +278,8 @@ async def export_users_activity_csv(
     registered_only: bool = False,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
 ) -> Response:
     _require_admin(request)
     page = store.list_users_activity_page(
@@ -280,6 +290,8 @@ async def export_users_activity_csv(
         registered_only=registered_only,
         created_from=created_from,
         created_to=created_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -332,6 +344,8 @@ async def export_bot_events_csv(
     search: str | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
 ) -> Response:
     _require_admin(request)
     page = store.list_bot_events_page(
@@ -343,6 +357,8 @@ async def export_bot_events_csv(
         query_text=search,
         created_from=created_from,
         created_to=created_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     buffer = io.StringIO()
     writer = csv.writer(buffer)

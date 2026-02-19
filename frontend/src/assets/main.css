@@ -101,6 +101,22 @@ a {
   vertical-align: top;
 }
 
+.page-card .nowrap {
+  white-space: nowrap;
+}
+
+.page-card .col-id {
+  min-width: 250px;
+}
+
+.page-card .col-date {
+  min-width: 235px;
+}
+
+.page-card .col-short {
+  min-width: 140px;
+}
+
 .page-card thead th {
   position: sticky;
   top: 0;
@@ -168,6 +184,24 @@ a {
   background: #edf4ff;
   border-color: #92b3ea;
   color: #1e4a8d;
+}
+
+.page-card .th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+}
+
+.page-card .th-sort .sort-indicator {
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .kpi-grid {
