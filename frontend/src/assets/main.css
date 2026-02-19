@@ -79,10 +79,10 @@ a {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  overflow: hidden;
   border: 1px solid #d6e0f0;
   border-radius: 12px;
   background: #fff;
+  min-width: 900px;
 }
 
 .page-card th {
@@ -99,6 +99,12 @@ a {
   padding: 10px 12px;
   text-align: left;
   vertical-align: top;
+}
+
+.page-card thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .page-card th:last-child,
@@ -124,6 +130,44 @@ a {
   gap: 10px;
   align-items: center;
   margin: 10px 0;
+}
+
+.page-card .table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 310px);
+  border: 1px solid #d6e0f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.page-card .table-wrap table {
+  border: 0;
+  border-radius: 0;
+}
+
+.page-card .status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.page-card .status-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: #2a4065;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.page-card .status-chip.is-active {
+  background: #edf4ff;
+  border-color: #92b3ea;
+  color: #1e4a8d;
 }
 
 .kpi-grid {
