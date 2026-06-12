@@ -69,6 +69,19 @@ curl -s "https://api.telegram.org/bot${TOKEN}/getWebhookInfo"
 ```
 После старта polling сервис делает `deleteWebhook`, и `url` должен стать пустым.
 
+## Current stage delivery mode
+
+As of 2026-06-12, MSK stage uses Telegram polling:
+
+- `TELEGRAM_POLLING_ENABLED=true`
+- Telegram `getWebhookInfo.url` is empty
+- `WEBHOOK_URL` may remain configured in `.env`, but it is ignored while polling is enabled
+- `/help`, `/profile`, and `/watch list` are observed in `bot_events`
+
+Before product launch, choose one production mode:
+- polling: simpler behind custom routing, webhook stays empty;
+- webhook: lower idle API traffic, requires stable public Telegram delivery to `https://idns.devee.ru/v1/telegram/webhook`.
+
 ## 4. Чеклист перед релизом
 1. `TELEGRAM_BOT_TOKEN` и `TELEGRAM_BOT_USERNAME` корректны.
 2. Прод-домен резолвится на нужный IP.
@@ -76,6 +89,20 @@ curl -s "https://api.telegram.org/bot${TOKEN}/getWebhookInfo"
 4. `https://<domain>/health` отдает `200`.
 5. `setWebhook` выполнен успешно.
 6. `/start` и `/help` отвечают в реальном Telegram-чате.
+
+## Stage smoke after routing changes
+Run on MSK:
+
+```bash
+cd /opt/domens
+ADMIN_CHAT_ID=<admin_chat_id> ./scripts/smoke_telegram_stage.sh
+```
+
+Expected:
+- host `getMe` succeeds;
+- `domens-api-1` can open TCP to `api.telegram.org:443`;
+- webhook URL matches the chosen delivery mode: empty for polling, `https://idns.devee.ru/v1/telegram/webhook` for webhook;
+- optional admin `sendMessage` succeeds.
 
 ## 5. Частые ошибки
 - `chat not found`: бот пишет в неверный chat id или пользователь/чат не стартовал бота.

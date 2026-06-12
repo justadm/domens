@@ -64,3 +64,11 @@ class TelegramWebhookRequest(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    database: bool
+    telegram_configured: bool
+    monitoring_enabled: bool
+    registration_enabled: bool

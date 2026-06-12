@@ -62,17 +62,17 @@ class Settings(BaseSettings):
     web_guest_user_id: str = ""
     web_guest_is_admin: bool = False
 
-    monitor_enabled: bool = True
+    monitor_enabled: bool = False
     monitor_interval_seconds: int = 300
     monitor_tlds: str = ".com,.io,.ai,.ru"
     monitor_seed_words: str = "agent,cloud,data,stack,flow,grid,lab,core"
     monitor_alert_min_score: float = 70.0
     monitor_alert_statuses: str = "available,pending_delete"
     monitor_require_provider_check: bool = True
-    monitor_alert_cooldown_minutes: int = 180
-    monitor_alert_per_target_run_limit: int = 5
-    monitor_alert_per_target_daily_limit: int = 25
-    monitor_alert_global_run_limit: int = 12
+    monitor_alert_cooldown_minutes: int = 1440
+    monitor_alert_per_target_run_limit: int = 1
+    monitor_alert_per_target_daily_limit: int = 3
+    monitor_alert_global_run_limit: int = 3
 
     copilot_llm_nlu_enabled: bool = False
     copilot_llm_provider: str = "ollama"

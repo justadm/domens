@@ -9,15 +9,34 @@ def build_confirmation_token() -> str:
     return f"cfm_{uuid.uuid4().hex}"
 
 
-async def send_telegram_alert(chat_id: str, domain: str, token: str) -> dict:
+async def send_telegram_alert(chat_id: str, domain: str, token: str, explanation: dict | None = None) -> dict:
     bot_token = settings.telegram_bot_token
+    details = ""
+    if explanation:
+        tld = str(explanation.get("tld") or "").lstrip(".")
+        details = (
+            f"\n\nScore: {explanation.get('score')}"
+            f"\nStatus: {explanation.get('status')}"
+            f"\nTLD: .{tld}"
+        )
     if not bot_token:
         return {
             "mode": "mock",
             "chat_id": chat_id,
             "domain": domain,
+            "text": (
+                f"Домен-кандидат: {domain}\n"
+                "Нажми «Зарегистрировать», чтобы создать заказ на регистрацию."
+                f"{details}"
+            ),
             "message_id": f"msg_{uuid.uuid4().hex[:8]}",
-            "buttons": [f"register:{token}", f"skip:{token}"],
+            "buttons": [
+                f"register:{token}",
+                f"skip:{token}",
+                f"feedback:more:{token}",
+                f"feedback:less:{token}",
+                f"feedback:never:{token}",
+            ],
         }
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -26,12 +45,20 @@ async def send_telegram_alert(chat_id: str, domain: str, token: str) -> dict:
         "text": (
             f"Домен-кандидат: {domain}\n"
             "Нажми «Зарегистрировать», чтобы создать заказ на регистрацию."
+            f"{details}"
         ),
         "reply_markup": {
             "inline_keyboard": [
                 [
                     {"text": "Зарегистрировать", "callback_data": f"register:{token}"},
                     {"text": "Пропустить", "callback_data": f"skip:{token}"},
+                ],
+                [
+                    {"text": "Больше таких", "callback_data": f"feedback:more:{token}"},
+                    {"text": "Меньше таких", "callback_data": f"feedback:less:{token}"},
+                ],
+                [
+                    {"text": "Не повторять", "callback_data": f"feedback:never:{token}"},
                 ]
             ]
         },
@@ -56,7 +83,13 @@ async def send_telegram_alert(chat_id: str, domain: str, token: str) -> dict:
         "chat_id": chat_id,
         "domain": domain,
         "message_id": str(data.get("result", {}).get("message_id", "")),
-        "buttons": [f"register:{token}", f"skip:{token}"],
+        "buttons": [
+            f"register:{token}",
+            f"skip:{token}",
+            f"feedback:more:{token}",
+            f"feedback:less:{token}",
+            f"feedback:never:{token}",
+        ],
     }
 
 

@@ -14,6 +14,12 @@
       <article class="kpi"><p>товаров (external)</p><h3>{{ stats.products_total ?? 0 }}</h3></article>
     </div>
 
+    <div class="kpi-grid quality-grid" v-if="!loading && quality">
+      <article class="kpi"><p>Alerts 7d</p><h3>{{ quality.alerts_total }}</h3></article>
+      <article class="kpi"><p>Feedback 7d</p><h3>{{ quality.feedback_total }}</h3></article>
+      <article class="kpi"><p>Suppressed 7d</p><h3>{{ quality.suppressed_total }}</h3></article>
+    </div>
+
     <p v-else-if="loading">Загрузка...</p>
 
     <div class="split" v-if="!loading">
@@ -59,6 +65,12 @@ import { onMounted, ref } from 'vue';
 import { apiRequest } from '@/services/api';
 
 type DashboardResp = { stats: Record<string, number | null> };
+type QualityResp = {
+  days: number;
+  alerts_total: number;
+  feedback_total: number;
+  suppressed_total: number;
+};
 type UsersPage = {
   items: Array<{ telegram_user_id: string; username?: string | null; events_total?: number }>;
 };
@@ -69,17 +81,20 @@ type EventsPage = {
 const loading = ref(true);
 const error = ref('');
 const stats = ref<Record<string, number | null> | null>(null);
+const quality = ref<QualityResp | null>(null);
 const users = ref<UsersPage>({ items: [] });
 const events = ref<EventsPage>({ items: [] });
 
 onMounted(async () => {
   try {
-    const [dashboardData, usersData, eventsData] = await Promise.all([
+    const [dashboardData, qualityData, usersData, eventsData] = await Promise.all([
       apiRequest<DashboardResp>('/v1/admin/dashboard'),
+      apiRequest<QualityResp>('/v1/admin/quality?days=7'),
       apiRequest<UsersPage>('/v1/admin/users-activity?limit=8&offset=0'),
       apiRequest<EventsPage>('/v1/admin/bot-events?limit=8&offset=0'),
     ]);
     stats.value = dashboardData.stats;
+    quality.value = qualityData;
     users.value = usersData;
     events.value = eventsData;
   } catch (e) {
@@ -92,6 +107,7 @@ onMounted(async () => {
 
 <style scoped>
 .error { color: #b42318; margin-bottom: 8px; }
+.quality-grid { margin-top: 12px; }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--surface-2); }
 .panel h3 { margin: 0 0 10px; font-size: 20px; }

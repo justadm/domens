@@ -92,7 +92,7 @@ def _main_menu_keyboard() -> dict:
     return {
         "keyboard": [
             [{"text": "/profile"}, {"text": "/limits"}],
-            [{"text": "/watch list"}, {"text": "/watch seed"}],
+            [{"text": "/watch list"}],
             [{"text": "/alerts on"}, {"text": "/alerts off"}],
             [{"text": "/domains now ai tools"}],
             [{"text": "/help"}],
@@ -254,7 +254,7 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
             "/admin grant <telegram_user_id> <role>\n"
             "/admin revoke <telegram_user_id> <role>"
         )
-    await send_telegram_text(chat_id, help_text)
+    await send_telegram_message(chat_id, help_text, reply_markup=_main_menu_keyboard())
     store.log_bot_event("command_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "help_sent"}
 
@@ -766,6 +766,29 @@ async def _handle_copilot_telegram(chat_id: str, user_id: str, text: str) -> dic
 
 
 async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callback_query_id: str | None) -> dict:
+    if callback_data.startswith("feedback:"):
+        parts = callback_data.split(":", 2)
+        if len(parts) != 3:
+            raise HTTPException(status_code=400, detail="invalid feedback callback_data")
+        _, feedback_type, token = parts
+        if feedback_type not in {"more", "less", "never"}:
+            raise HTTPException(status_code=400, detail="invalid feedback type")
+
+        ok = store.record_alert_feedback(token, user_id, feedback_type)
+        if feedback_type == "never":
+            alert = store.get_alert_by_token(token)
+            if alert:
+                store.suppress_alert(alert.domain, alert.telegram_chat_id, reason="user_never", days=365)
+        store.log_bot_event(
+            "alert_feedback",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"token": token, "feedback_type": feedback_type, "ok": ok},
+        )
+        if callback_query_id:
+            await answer_telegram_callback(callback_query_id, "Принято")
+        return {"ok": ok, "action": "feedback", "feedback_type": feedback_type}
+
     if callback_query_id:
         await answer_telegram_callback(callback_query_id)
 
@@ -883,6 +906,7 @@ async def process_telegram_update(payload: dict) -> dict:
         return await _handle_help(chat_id, user_id)
     if text.startswith("/menu"):
         await send_telegram_message(chat_id, "Главное меню:", reply_markup=_main_menu_keyboard())
+        store.log_bot_event("command_menu", telegram_user_id=user_id, telegram_chat_id=chat_id)
         return {"ok": True, "action": "menu_sent"}
     if text.startswith("/limits"):
         return await _handle_limits(chat_id, user_id)

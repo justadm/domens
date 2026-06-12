@@ -70,6 +70,13 @@ class CopilotRuntimeResponse(BaseModel):
     status: dict
 
 
+class AdminQualityResponse(BaseModel):
+    days: int
+    alerts_total: int
+    feedback_total: int
+    suppressed_total: int
+
+
 def _env_admin_ids() -> set[str]:
     return {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
 
@@ -132,6 +139,12 @@ async def dashboard(request: Request) -> AdminDashboardResponse:
                 continue
             stats[f"ecom_{extra_key}"] = value
     return AdminDashboardResponse(stats=stats)
+
+
+@router.get("/quality", response_model=AdminQualityResponse)
+async def admin_quality(request: Request, days: int = 7) -> AdminQualityResponse:
+    _require_admin(request)
+    return AdminQualityResponse(**store.get_alert_quality_metrics(days=days))
 
 
 @router.get("/users-activity", response_model=AdminUsersActivityResponse)

@@ -17,7 +17,7 @@ from app.routers.max import router as max_router
 from app.routers.monitoring import router as monitoring_router
 from app.routers.registrations import router as registrations_router
 from app.routers.telegram import router as telegram_router
-from app.schemas import HealthResponse
+from app.schemas import HealthResponse, ReadinessResponse
 from app.state import store
 from app.telegram_polling_runtime import telegram_polling_service
 
@@ -58,6 +58,18 @@ async def web_admin_index() -> FileResponse:
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.get("/ready", response_model=ReadinessResponse)
+async def ready() -> ReadinessResponse:
+    database_ok = store.ping()
+    return ReadinessResponse(
+        status="ok" if database_ok else "degraded",
+        database=database_ok,
+        telegram_configured=bool(settings.telegram_bot_token and settings.telegram_bot_username),
+        monitoring_enabled=bool(settings.monitor_enabled),
+        registration_enabled=bool(settings.registration_enabled),
+    )
 
 
 @app.on_event("startup")

@@ -7,6 +7,8 @@
       <input v-model.trim="createForm.tlds" placeholder="TLDs CSV (.com,.io,.ai,.ru)" />
       <input v-model.trim="createForm.min_score" type="number" min="0" max="100" step="0.1" placeholder="Min score" />
       <input v-model.trim="createForm.max_price_usd" type="number" min="0" step="0.01" placeholder="Max price USD" />
+      <input v-model.trim="createForm.max_length" type="number" min="3" max="30" placeholder="Max length" />
+      <input v-model.trim="createForm.daily_alert_limit" type="number" min="1" max="10" placeholder="Daily alerts" />
       <button class="btn" type="submit">Добавить</button>
     </form>
 
@@ -34,6 +36,8 @@
           <input v-model.trim="item.tldsCsv" placeholder=".com,.io" />
           <input v-model.trim="item.minScore" type="number" min="0" max="100" step="0.1" placeholder="Min score" />
           <input v-model.trim="item.maxPrice" type="number" min="0" step="0.01" placeholder="Max price" />
+          <input v-model.trim="item.maxLength" type="number" min="3" max="30" placeholder="Max length" />
+          <input v-model.trim="item.dailyAlertLimit" type="number" min="1" max="10" placeholder="Daily alerts" />
         </div>
         <div class="actions">
           <button class="btn" @click="setStatus(item.id, 'active')">active</button>
@@ -58,6 +62,8 @@ type RuleApi = {
   tlds: string[];
   min_score: number | null;
   max_price_usd: number | null;
+  max_length: number | null;
+  daily_alert_limit: number;
 };
 
 type RuleUi = {
@@ -67,6 +73,8 @@ type RuleUi = {
   tldsCsv: string;
   minScore: string;
   maxPrice: string;
+  maxLength: string;
+  dailyAlertLimit: string;
 };
 
 const loading = ref(false);
@@ -83,6 +91,8 @@ const createForm = reactive({
   tlds: '',
   min_score: '',
   max_price_usd: '',
+  max_length: '',
+  daily_alert_limit: '3',
 });
 
 function toUi(item: RuleApi): RuleUi {
@@ -93,6 +103,8 @@ function toUi(item: RuleApi): RuleUi {
     tldsCsv: (item.tlds || []).join(','),
     minScore: item.min_score == null ? '' : String(item.min_score),
     maxPrice: item.max_price_usd == null ? '' : String(item.max_price_usd),
+    maxLength: item.max_length == null ? '' : String(item.max_length),
+    dailyAlertLimit: String(item.daily_alert_limit || 3),
   };
 }
 
@@ -123,12 +135,16 @@ async function createRule() {
         tlds: createForm.tlds.split(',').map((s) => s.trim()).filter(Boolean),
         min_score: createForm.min_score ? Number(createForm.min_score) : null,
         max_price_usd: createForm.max_price_usd ? Number(createForm.max_price_usd) : null,
+        max_length: createForm.max_length ? Number(createForm.max_length) : null,
+        daily_alert_limit: createForm.daily_alert_limit ? Number(createForm.daily_alert_limit) : 3,
       }),
     });
     createForm.query = '';
     createForm.tlds = '';
     createForm.min_score = '';
     createForm.max_price_usd = '';
+    createForm.max_length = '';
+    createForm.daily_alert_limit = '3';
     await loadRules();
   } catch (e) {
     error.value = String(e);
@@ -158,6 +174,8 @@ async function saveRule(item: RuleUi) {
         tlds: item.tldsCsv.split(',').map((s) => s.trim()).filter(Boolean),
         min_score: item.minScore ? Number(item.minScore) : null,
         max_price_usd: item.maxPrice ? Number(item.maxPrice) : null,
+        max_length: item.maxLength ? Number(item.maxLength) : null,
+        daily_alert_limit: item.dailyAlertLimit ? Number(item.dailyAlertLimit) : 3,
       }),
     });
     await loadRules();
@@ -170,11 +188,11 @@ onMounted(loadRules);
 </script>
 
 <style scoped>
-.row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .list { display: grid; gap: 8px; }
 .item { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 10px; }
 .item-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
-.item-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.item-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .error { color: #b42318; }
 input, select { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }

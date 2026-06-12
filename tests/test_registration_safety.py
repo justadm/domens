@@ -42,7 +42,7 @@ def test_execute_registration_fails_on_unavailable_precheck(monkeypatch) -> None
         'store',
         SimpleNamespace(
             get_order=lambda oid: fake_order if oid == order_id else None,
-            set_order_status=lambda oid, status: state.__setitem__('status', status),
+            set_order_status=lambda oid, status, **kwargs: state.update({"status": status, "payload": kwargs}),
         ),
     )
     async def fake_check_availability(domain: str) -> dict:
@@ -67,3 +67,41 @@ def test_execute_registration_fails_on_unavailable_precheck(monkeypatch) -> None
     assert body['status'] == 'failed'
     assert body['registrar_response']['result'] == 'precheck_unavailable'
     assert state['status'] == 'failed'
+    assert state['payload']['response_payload']['availability_check']['available'] is False
+
+
+def test_execute_registration_blocks_unknown_availability(monkeypatch) -> None:
+    order_id = str(uuid.uuid4())
+    fake_order = SimpleNamespace(order_id=order_id, domain='example.com', status='queued')
+    state = {'status': None, 'payload': None}
+
+    monkeypatch.setattr(registrations.settings, 'registration_enabled', True)
+    monkeypatch.setattr(registrations.settings, 'registration_require_available_check', True)
+    monkeypatch.setattr(
+        registrations,
+        'store',
+        SimpleNamespace(
+            get_order=lambda oid: fake_order if oid == order_id else None,
+            set_order_status=lambda oid, status, **kwargs: state.update({"status": status, "payload": kwargs}),
+        ),
+    )
+
+    async def fake_check_availability(domain: str) -> dict:
+        return {'provider': 'timeweb', 'available': None, 'status': 'unknown'}
+
+    monkeypatch.setattr(
+        registrations,
+        'registrar_client',
+        SimpleNamespace(check_availability=fake_check_availability),
+    )
+
+    client = TestClient(app)
+    response = client.post(f'/v1/registrations/{order_id}/execute')
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body['status'] == 'failed'
+    assert body['registrar_response']['result'] == 'precheck_unavailable'
+    assert body['registrar_response']['availability_check']['available'] is None
+    assert state['status'] == 'failed'
+    assert state['payload']['error_message'] == 'fresh availability check failed'

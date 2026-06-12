@@ -31,6 +31,8 @@ class WatchRuleCreateRequest(BaseModel):
     tlds: list[str] = Field(default_factory=list)
     min_score: float | None = None
     max_price_usd: float | None = None
+    max_length: int | None = None
+    daily_alert_limit: int = 3
 
 
 class WatchRuleStatusRequest(BaseModel):
@@ -42,6 +44,8 @@ class WatchRuleUpdateRequest(BaseModel):
     tlds: list[str] | None = None
     min_score: float | None = None
     max_price_usd: float | None = None
+    max_length: int | None = None
+    daily_alert_limit: int | None = None
 
 
 class CabinetProfileResponse(BaseModel):
@@ -68,6 +72,18 @@ class CabinetSubscriptionsResponse(BaseModel):
 
 class CabinetWatchRulesResponse(BaseModel):
     items: list[dict]
+
+
+def _clamp_watch_max_length(value: int | None) -> int | None:
+    if value is None:
+        return None
+    return max(3, min(int(value), 30))
+
+
+def _clamp_watch_daily_alert_limit(value: int | None) -> int:
+    if value is None:
+        return 3
+    return max(1, min(int(value), 10))
 
 
 class CabinetHistoryResponse(BaseModel):
@@ -247,6 +263,8 @@ async def cabinet_watch_rule_create(payload: WatchRuleCreateRequest, request: Re
         tlds=payload.tlds,
         min_score=payload.min_score,
         max_price_usd=payload.max_price_usd,
+        max_length=_clamp_watch_max_length(payload.max_length),
+        daily_alert_limit=_clamp_watch_daily_alert_limit(payload.daily_alert_limit),
     )
     if not rule_id:
         raise HTTPException(status_code=400, detail="failed to create watch rule")
@@ -302,8 +320,14 @@ async def cabinet_watch_rule_update(
         tlds=payload.tlds if "tlds" in fields else None,
         min_score=payload.min_score,
         max_price_usd=payload.max_price_usd,
+        max_length=_clamp_watch_max_length(payload.max_length) if "max_length" in fields else None,
+        daily_alert_limit=_clamp_watch_daily_alert_limit(payload.daily_alert_limit)
+        if "daily_alert_limit" in fields
+        else None,
         min_score_set="min_score" in fields,
         max_price_usd_set="max_price_usd" in fields,
+        max_length_set="max_length" in fields,
+        daily_alert_limit_set="daily_alert_limit" in fields,
     )
     if not ok:
         raise HTTPException(status_code=404, detail="watch rule not found or invalid payload")

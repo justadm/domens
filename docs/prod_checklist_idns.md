@@ -1,5 +1,7 @@
 # Prod checklist: idns.devee.ru
 
+Before enabling monitoring or registration, follow `docs/product_launch_runbook.md`.
+
 ## 1) DNS and network
 - A record: `idns.devee.ru -> 85.239.44.49`
 - Open ports: `22`, `80`, `443`
@@ -31,11 +33,18 @@ Required values in `/opt/domens/.env`:
 - `POSTGRES_PASSWORD=<strong password>`
 - `TELEGRAM_BOT_TOKEN=...`
 - `TELEGRAM_BOT_USERNAME=...`
-- `WEBHOOK_URL=https://idns.devee.ru/v1/telegram/webhook`
-- `TELEGRAM_POLLING_ENABLED=false`
+- choose Telegram delivery mode:
+  - polling: `TELEGRAM_POLLING_ENABLED=true`, webhook URL empty;
+  - webhook: `TELEGRAM_POLLING_ENABLED=false`, `WEBHOOK_URL=https://idns.devee.ru/v1/telegram/webhook`.
 - `REGISTRATION_ENABLED=false` (safe mode)
 - `REGISTRATION_REQUIRE_AVAILABLE_CHECK=true`
+- `MONITOR_ENABLED=false` (safe first run)
 - `MONITOR_REQUIRE_PROVIDER_CHECK=true`
+- conservative alert limits before canary:
+  - `MONITOR_ALERT_GLOBAL_RUN_LIMIT=3`
+  - `MONITOR_ALERT_PER_TARGET_RUN_LIMIT=1`
+  - `MONITOR_ALERT_PER_TARGET_DAILY_LIMIT=3`
+  - `MONITOR_ALERT_COOLDOWN_MINUTES=1440`
 - `TELEGRAM_ADMIN_USER_IDS=13903713`
 
 ## 4) First run (nginx mode on msk)
@@ -47,9 +56,22 @@ sudo -n docker compose -p domens -f docker-compose.nginx.yml ps
 
 Why not `docker-compose.prod.yml`:
 - `80/443` are already occupied by host nginx on `msk`;
-- use host nginx vhost `idns.devee.ru` -> `127.0.0.1:28080`.
+- use host nginx vhost `idns.devee.ru` -> `127.0.0.1:28080` for API paths and `127.0.0.1:28200` for the SPA.
 
-## 5) Telegram domain + webhook
+Expected compose services in nginx mode:
+- `api`
+- `frontend`
+- `postgres`
+- `redis`
+
+## 5) Telegram delivery mode
+Choose Telegram delivery mode before launch:
+- Polling mode: `TELEGRAM_POLLING_ENABLED=true`, Telegram `getWebhookInfo.url` empty.
+- Webhook mode: `TELEGRAM_POLLING_ENABLED=false`, webhook URL set to `https://idns.devee.ru/v1/telegram/webhook`.
+
+Polling mode is acceptable for launch while Telegram egress from MSK is routed through the non-RU uplink and the bot answers command smoke tests.
+
+### Webhook mode setup
 In BotFather:
 - `/setdomain` -> `idns.devee.ru`
 
@@ -62,6 +84,18 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 Expected:
 - `url` is set to `https://idns.devee.ru/v1/telegram/webhook`
 - no `last_error_message`
+
+### Polling mode setup
+Ensure webhook is empty:
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+Expected:
+- `url` is empty
+- `pending_update_count` does not grow after commands are processed
 
 ## 6) GitHub Actions deploy secrets
 Set in GitHub repository settings:
@@ -83,7 +117,9 @@ Telegram checks:
 - `/start`
 - `/help`
 - `/profile`
-- `/watch seed`
+- `/menu`
+- `/watch list`
+- `ADMIN_CHAT_ID=<admin_chat_id> ./scripts/smoke_telegram_stage.sh`
 - ensure alerts are coming without noisy false positives.
 
 ## 8) Switch to real registration later

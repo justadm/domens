@@ -96,6 +96,26 @@ class DomainMonitoringService:
             return False
         return any(word in name for word in words)
 
+    @staticmethod
+    def _build_alert_explanation(
+        fqdn: str,
+        status: str,
+        score: float,
+        provider: str,
+        matched_query: str | None,
+    ) -> dict:
+        name, _, tld = fqdn.partition(".")
+        return {
+            "score": round(float(score), 2),
+            "status": status,
+            "provider": provider,
+            "matched_query": matched_query,
+            "tld": tld,
+            "length": len(name),
+            "risk": "provider_check_required" if provider == "heuristic" else "provider_checked",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     async def run_once(self) -> dict:
         if self._run_once_lock.locked():
             return {
@@ -151,13 +171,14 @@ class DomainMonitoringService:
                         allow_heuristic_fallback=not settings.monitor_require_provider_check,
                     )
                     score = score_domain(fqdn)
+                    provider = "timeweb" if self.timeweb_client.is_configured else "heuristic"
                     self.store.upsert_domain_snapshot(
                         fqdn=fqdn,
                         status=status,
                         score=score,
                         drop_time_estimated_at=eta,
                         source="monitor",
-                        provider="timeweb" if self.timeweb_client.is_configured else "heuristic",
+                        provider=provider,
                     )
 
                     if status not in interesting_statuses:
@@ -173,8 +194,17 @@ class DomainMonitoringService:
                                     "telegram" if settings.telegram_chat_id else "max",
                                     destination,
                                 )
+                                explanation = self._build_alert_explanation(
+                                    fqdn=fqdn,
+                                    status=status,
+                                    score=score,
+                                    provider=provider,
+                                    matched_query=None,
+                                )
                                 async with per_target_lock:
                                     if alerts_sent >= global_run_limit:
+                                        destination = ""
+                                    elif self.store.should_suppress_alert(fqdn, destination, reason="same_domain"):
                                         destination = ""
                                     else:
                                         if destination_key not in per_target_daily_sent:
@@ -198,11 +228,13 @@ class DomainMonitoringService:
                                         telegram_chat_id=destination,
                                         token=token,
                                         alert_type="monitor_match",
+                                        explanation=explanation,
                                     )
                                     if settings.telegram_chat_id:
-                                        await send_telegram_alert(settings.telegram_chat_id, fqdn, token)
+                                        await send_telegram_alert(settings.telegram_chat_id, fqdn, token, explanation=explanation)
                                     if settings.max_chat_id:
                                         await send_max_alert(settings.max_chat_id, fqdn, token)
+                                    self.store.suppress_alert(fqdn, destination, reason="same_domain", days=30)
 
                     # Personalized monitoring by active watch-rules and subscriptions.
                     sent_keys: set[tuple[str, str]] = set()
@@ -215,6 +247,9 @@ class DomainMonitoringService:
                         min_score = target.get("min_score")
                         if min_score is not None and score < float(min_score):
                             continue
+                        max_length = target.get("max_length")
+                        if max_length is not None and len(fqdn.split(".", 1)[0]) > int(max_length):
+                            continue
 
                         channel_type = str(target.get("channel_type") or "").lower()
                         channel_target = str(target.get("channel_target") or "").strip()
@@ -224,6 +259,10 @@ class DomainMonitoringService:
                         if key in sent_keys:
                             continue
                         async with per_target_lock:
+                            target_daily_limit = max(
+                                1,
+                                min(int(target.get("daily_alert_limit") or per_target_daily_limit), 10),
+                            )
                             if alerts_sent >= global_run_limit:
                                 continue
                             if key not in per_target_daily_sent:
@@ -232,10 +271,10 @@ class DomainMonitoringService:
                                     within_hours=24,
                                     alert_type_prefix="watch_rule_match",
                                 )
-                            effective_limit = dynamic_run_limit(per_target_daily_sent[key])
+                            effective_limit = 1 if per_target_daily_sent[key] >= int(target_daily_limit * 0.8) else per_target_run_limit
                             if per_target_sent.get(key, 0) >= effective_limit:
                                 continue
-                            if per_target_daily_sent[key] >= per_target_daily_limit:
+                            if per_target_daily_sent[key] >= target_daily_limit:
                                 continue
                             if self.store.has_recent_alert_for_destination(
                                 fqdn,
@@ -243,22 +282,33 @@ class DomainMonitoringService:
                                 within_minutes=settings.monitor_alert_cooldown_minutes,
                             ):
                                 continue
+                            if self.store.should_suppress_alert(fqdn, channel_target, reason="same_domain"):
+                                continue
                             per_target_sent[key] = per_target_sent.get(key, 0) + 1
                             per_target_daily_sent[key] += 1
                             alerts_sent += 1
 
                         token = build_confirmation_token()
+                        explanation = self._build_alert_explanation(
+                            fqdn=fqdn,
+                            status=status,
+                            score=score,
+                            provider=provider,
+                            matched_query=str(target.get("query") or "") or None,
+                        )
                         self.store.create_alert(
                             domain=fqdn,
                             telegram_chat_id=channel_target,
                             token=token,
                             alert_type=f"watch_rule_match:{rule_id}",
+                            explanation=explanation,
                         )
 
                         if channel_type == "telegram":
-                            await send_telegram_alert(channel_target, fqdn, token)
+                            await send_telegram_alert(channel_target, fqdn, token, explanation=explanation)
                         else:
                             await send_max_alert(channel_target, fqdn, token)
+                        self.store.suppress_alert(fqdn, channel_target, reason="same_domain", days=30)
 
                         sent_keys.add(key)
 
@@ -287,18 +337,29 @@ class DomainMonitoringService:
                                 within_minutes=settings.monitor_alert_cooldown_minutes,
                             ):
                                 continue
+                            if self.store.should_suppress_alert(fqdn, admin_chat_id, reason="same_domain"):
+                                continue
                             per_target_sent[key] = per_target_sent.get(key, 0) + 1
                             per_target_daily_sent[key] += 1
                             alerts_sent += 1
 
                         token = build_confirmation_token()
+                        explanation = self._build_alert_explanation(
+                            fqdn=fqdn,
+                            status=status,
+                            score=score,
+                            provider=provider,
+                            matched_query=None,
+                        )
                         self.store.create_alert(
                             domain=fqdn,
                             telegram_chat_id=admin_chat_id,
                             token=token,
                             alert_type="admin_fanout",
+                            explanation=explanation,
                         )
-                        await send_telegram_alert(admin_chat_id, fqdn, token)
+                        await send_telegram_alert(admin_chat_id, fqdn, token, explanation=explanation)
+                        self.store.suppress_alert(fqdn, admin_chat_id, reason="same_domain", days=30)
                         sent_keys.add(key)
 
             await asyncio.gather(*(process_domain(fqdn) for fqdn in candidates))

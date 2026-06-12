@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
@@ -70,8 +72,19 @@ async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
 
     if settings.registration_require_available_check:
         check = await registrar_client.check_availability(order.domain)
-        if not bool(check.get("available")):
-            store.set_order_status(order_id, "failed")
+        availability_check = {
+            "provider": check.get("provider"),
+            "available": check.get("available"),
+            "status": check.get("status"),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if check.get("available") is not True:
+            store.set_order_status(
+                order_id,
+                "failed",
+                response_payload={"availability_check": availability_check},
+                error_message="fresh availability check failed",
+            )
             return ExecuteRegistrationResponse(
                 order_id=order_id,
                 status="failed",
@@ -79,6 +92,7 @@ async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
                     "result": "precheck_unavailable",
                     "domain": order.domain,
                     "check": check,
+                    "availability_check": availability_check,
                 },
             )
 

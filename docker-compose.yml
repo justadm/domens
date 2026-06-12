@@ -53,5 +53,13 @@ services:
       retries: 10
       start_period: 5s
 
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+    ports:
+      - "127.0.0.1:28200:80"
+    restart: unless-stopped
+
 volumes:
   pg_data:

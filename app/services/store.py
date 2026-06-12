@@ -150,6 +150,8 @@ class AlertModel(Base):
     message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     alert_type: Mapped[str] = mapped_column(Text, nullable=False, default="manual_trigger")
     confirmation_token: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
+    explanation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    delivery_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -157,6 +159,35 @@ class AlertModel(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     domain: Mapped[DomainModel] = relationship(back_populates="alerts")
+
+
+class AlertFeedbackModel(Base):
+    __tablename__ = "alert_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alert_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("alerts.id"), nullable=False)
+    telegram_user_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_type: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AlertSuppressionModel(Base):
+    __tablename__ = "alert_suppressions"
+    __table_args__ = (UniqueConstraint("fqdn", "destination", "reason", name="uq_alert_suppressions_target_reason"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fqdn: Mapped[str] = mapped_column(Text, nullable=False)
+    destination: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class RegistrationOrderModel(Base):
@@ -239,6 +270,8 @@ class UserWatchRuleModel(Base):
     tlds: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     min_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     max_price_usd: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    max_length: Mapped[int | None] = mapped_column(nullable=True)
+    daily_alert_limit: Mapped[int] = mapped_column(nullable=False, default=3)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -444,6 +477,14 @@ class PostgresStore:
     def _session(self) -> Session:
         return self.session_factory()
 
+    def ping(self) -> bool:
+        try:
+            with self._session() as session:
+                session.execute(select(1))
+            return True
+        except Exception:
+            return False
+
     @staticmethod
     def _split_domain(fqdn: str) -> tuple[str, str]:
         cleaned = fqdn.strip().lower()
@@ -478,7 +519,15 @@ class PostgresStore:
         except ValueError:
             return DomainStatus.UNKNOWN
 
-    def create_alert(self, domain: str, telegram_chat_id: str, token: str, alert_type: str = "manual_trigger") -> Alert:
+    def create_alert(
+        self,
+        domain: str,
+        telegram_chat_id: str,
+        token: str,
+        alert_type: str = "manual_trigger",
+        explanation: dict | None = None,
+        delivery_payload: dict | None = None,
+    ) -> Alert:
         with self._session() as session:
             domain_model = self._get_or_create_domain(session, domain)
             alert = AlertModel(
@@ -486,6 +535,8 @@ class PostgresStore:
                 telegram_chat_id=telegram_chat_id,
                 alert_type=alert_type,
                 confirmation_token=token,
+                explanation=explanation or {},
+                delivery_payload=delivery_payload or {},
                 acknowledged=False,
             )
             session.add(alert)
@@ -1027,7 +1078,13 @@ class PostgresStore:
                 created_at=order.created_at,
             )
 
-    def set_order_status(self, order_id: str, status: str) -> None:
+    def set_order_status(
+        self,
+        order_id: str,
+        status: str,
+        response_payload: dict | None = None,
+        error_message: str | None = None,
+    ) -> None:
         with self._session() as session:
             try:
                 order_uuid = uuid.UUID(order_id)
@@ -1041,6 +1098,10 @@ class PostgresStore:
                 return
 
             order.status = RegistrationStatus(status)
+            if response_payload is not None:
+                order.response_payload = response_payload
+            if error_message is not None:
+                order.error_message = error_message
             order.updated_at = datetime.now(timezone.utc)
             if status in {"registered", "failed", "canceled"}:
                 order.completed_at = datetime.now(timezone.utc)
@@ -1086,6 +1147,66 @@ class PostgresStore:
                 .limit(1)
             ).scalar_one_or_none()
             return row is not None
+
+    def should_suppress_alert(self, fqdn: str, destination: str, reason: str) -> bool:
+        now = datetime.now(timezone.utc)
+        with self._session() as session:
+            row = session.execute(
+                select(AlertSuppressionModel)
+                .where(AlertSuppressionModel.fqdn == fqdn.strip().lower())
+                .where(AlertSuppressionModel.destination == str(destination))
+                .where(AlertSuppressionModel.reason == reason)
+                .where(or_(AlertSuppressionModel.expires_at.is_(None), AlertSuppressionModel.expires_at > now))
+                .limit(1)
+            ).scalar_one_or_none()
+            return row is not None
+
+    def suppress_alert(self, fqdn: str, destination: str, reason: str, days: int = 30) -> None:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=max(1, days))
+        with self._session() as session:
+            existing = session.execute(
+                select(AlertSuppressionModel)
+                .where(AlertSuppressionModel.fqdn == fqdn.strip().lower())
+                .where(AlertSuppressionModel.destination == str(destination))
+                .where(AlertSuppressionModel.reason == reason)
+                .limit(1)
+            ).scalar_one_or_none()
+            if existing:
+                existing.expires_at = expires_at
+            else:
+                session.add(
+                    AlertSuppressionModel(
+                        fqdn=fqdn.strip().lower(),
+                        destination=str(destination),
+                        reason=reason,
+                        expires_at=expires_at,
+                    )
+                )
+            session.commit()
+
+    def record_alert_feedback(
+        self,
+        token: str,
+        telegram_user_id: str,
+        feedback_type: str,
+        payload: dict | None = None,
+    ) -> bool:
+        with self._session() as session:
+            alert = session.execute(
+                select(AlertModel).where(AlertModel.confirmation_token == token).limit(1)
+            ).scalar_one_or_none()
+            if not alert:
+                return False
+            session.add(
+                AlertFeedbackModel(
+                    alert_id=alert.id,
+                    telegram_user_id=str(telegram_user_id),
+                    feedback_type=feedback_type,
+                    payload=payload or {},
+                )
+            )
+            session.commit()
+            return True
 
     def has_recent_alert_for_destination(self, fqdn: str, destination: str, within_minutes: int = 60) -> bool:
         threshold = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
@@ -1532,6 +1653,8 @@ class PostgresStore:
         tlds: list[str] | None = None,
         min_score: float | None = None,
         max_price_usd: float | None = None,
+        max_length: int | None = None,
+        daily_alert_limit: int = 3,
     ) -> str | None:
         with self._session() as session:
             user = session.execute(
@@ -1546,6 +1669,8 @@ class PostgresStore:
                 tlds={"items": tlds or []},
                 min_score=min_score,
                 max_price_usd=max_price_usd,
+                max_length=max_length,
+                daily_alert_limit=daily_alert_limit,
                 status="active",
             )
             session.add(rule)
@@ -1573,6 +1698,8 @@ class PostgresStore:
                     "tlds": (r.tlds or {}).get("items", []),
                     "min_score": float(r.min_score) if r.min_score is not None else None,
                     "max_price_usd": float(r.max_price_usd) if r.max_price_usd is not None else None,
+                    "max_length": int(r.max_length) if r.max_length is not None else None,
+                    "daily_alert_limit": int(r.daily_alert_limit or 3),
                 }
                 for r in rows
             ]
@@ -1601,6 +1728,8 @@ class PostgresStore:
                         "tlds": (rule.tlds or {}).get("items", []),
                         "min_score": float(rule.min_score) if rule.min_score is not None else None,
                         "max_price_usd": float(rule.max_price_usd) if rule.max_price_usd is not None else None,
+                        "max_length": int(rule.max_length) if rule.max_length is not None else None,
+                        "daily_alert_limit": int(rule.daily_alert_limit or 3),
                         "channel_type": sub.channel_type,
                         "channel_target": sub.channel_target,
                     }
@@ -1639,8 +1768,12 @@ class PostgresStore:
         tlds: list[str] | None = None,
         min_score: float | None = None,
         max_price_usd: float | None = None,
+        max_length: int | None = None,
+        daily_alert_limit: int | None = None,
         min_score_set: bool = False,
         max_price_usd_set: bool = False,
+        max_length_set: bool = False,
+        daily_alert_limit_set: bool = False,
     ) -> bool:
         with self._session() as session:
             user = session.execute(
@@ -1674,6 +1807,10 @@ class PostgresStore:
                 rule.min_score = min_score
             if max_price_usd_set:
                 rule.max_price_usd = max_price_usd
+            if max_length_set:
+                rule.max_length = max_length
+            if daily_alert_limit_set and daily_alert_limit is not None:
+                rule.daily_alert_limit = daily_alert_limit
 
             rule.updated_at = datetime.now(timezone.utc)
             session.commit()
@@ -2400,6 +2537,35 @@ class PostgresStore:
                     "products_total": "not_available_in_this_service",
                     "ecommerce_orders_total": "not_available_in_this_service",
                 },
+            }
+
+    def get_alert_quality_metrics(self, days: int = 7) -> dict:
+        safe_days = max(1, min(int(days), 90))
+        since = datetime.now(timezone.utc) - timedelta(days=safe_days)
+        with self._session() as session:
+            alerts_total = int(
+                session.execute(
+                    select(func.count()).select_from(AlertModel).where(AlertModel.created_at >= since)
+                ).scalar()
+                or 0
+            )
+            feedback_total = int(
+                session.execute(
+                    select(func.count()).select_from(AlertFeedbackModel).where(AlertFeedbackModel.created_at >= since)
+                ).scalar()
+                or 0
+            )
+            suppressed_total = int(
+                session.execute(
+                    select(func.count()).select_from(AlertSuppressionModel).where(AlertSuppressionModel.created_at >= since)
+                ).scalar()
+                or 0
+            )
+            return {
+                "days": safe_days,
+                "alerts_total": alerts_total,
+                "feedback_total": feedback_total,
+                "suppressed_total": suppressed_total,
             }
 
     def create_conversation(self, telegram_user_id: str, channel: str = "web") -> str:

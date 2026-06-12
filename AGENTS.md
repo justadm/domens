@@ -1,0 +1,42 @@
+# domens Agent Guide
+
+This repository is connected to MemLayer.
+
+<!-- MEMLAYER_ROOT_PACK:START -->
+# MemLayer Working Memory
+
+Read [MEMLAYER.md](./.memlayer/MEMLAYER.md) before planning or making significant changes.
+
+Minimum workflow for every meaningful task:
+
+1. Read recent project context from MemLayer before coding, debugging, or deploying.
+2. Reuse existing decisions, constraints, risks, and artifacts instead of reinventing them.
+3. After meaningful work, write back:
+   - decisions
+   - constraints
+   - risks
+   - artifacts
+   - task outcomes
+4. If the local project structure changed, run a project reimport/update into MemLayer.
+
+Use this local config first:
+
+- [.memlayer/memlayer.config.json](./.memlayer/memlayer.config.json)
+- [.memlayer/memlayer_api.sh](./.memlayer/memlayer_api.sh)
+- [.memlayer/memlayer_context.sh](./.memlayer/memlayer_context.sh)
+- [.memlayer/memlayer_watchdog.sh](./.memlayer/memlayer_watchdog.sh)
+- [.memlayer/memlayer_recover.sh](./.memlayer/memlayer_recover.sh)
+- [.memlayer/memlayer_write.sh](./.memlayer/memlayer_write.sh)
+- [.memlayer/memlayer_sync.sh](./.memlayer/memlayer_sync.sh)
+- [.memlayer/memlayer_snapshot_pull.sh](./.memlayer/memlayer_snapshot_pull.sh)
+- [.memlayer/memlayer.snapshot.md](./.memlayer/memlayer.snapshot.md)
+- [.memlayer/memlayer.offline.queue.jsonl](./.memlayer/memlayer.offline.queue.jsonl)
+- [.memlayer/memlayer.offline.log.md](./.memlayer/memlayer.offline.log.md)
+- [.memlayer/.env.memlayer](./.memlayer/.env.memlayer)
+- [.memlayer/.env.memlayer.example](./.memlayer/.env.memlayer.example)
+
+Prefer `./.memlayer/memlayer_api.sh` over raw `curl`: it tries production MemLayer first and then falls back through local endpoints when production is unavailable from the current runtime.
+For pre-task reading, prefer `./.memlayer/memlayer_context.sh`: it reads the local project snapshot first and does not block task startup on a flaky live runtime. If you pass a query in offline mode, it now does a local filtered search over `memlayer.snapshot.json` instead of dumping the whole snapshot unchanged. Use `./.memlayer/memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh the snapshot from live MemLayer.
+If live access behaves strangely in the current runtime, run `./.memlayer/memlayer_api.sh doctor` before assuming MemLayer itself is broken: it shows the current endpoint ladder and which candidates are reachable from this exact environment.
+If both live endpoints are unavailable in the current agent session, queue writes through `./.memlayer/memlayer_write.sh` and later flush them with `./.memlayer/memlayer_sync.sh` when MemLayer is reachable again.
+<!-- MEMLAYER_ROOT_PACK:END -->
