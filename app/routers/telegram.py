@@ -267,7 +267,7 @@ async def _handle_start(chat_id: str, user_id: str, locale: str, username: str |
 
     await send_telegram_message(
         chat_id,
-        "Вы уже зарегистрированы. Используйте /help для списка команд.",
+        "Вы уже зарегистрированы.\nГлавное меню ниже. Краткая помощь: /help, полный список команд: /commands.",
         reply_markup=_main_menu_keyboard(),
     )
     return {"ok": True, "action": "start_existing_user"}
@@ -912,7 +912,7 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
         if chat_id:
             await send_telegram_message(
                 chat_id,
-                "Условия приняты. Теперь доступны команды: /help, /profile, /watch ...",
+                "Условия приняты.\nГлавное меню ниже. Краткая помощь: /help, полный список команд: /commands.",
                 reply_markup=_main_menu_keyboard(),
             )
         return {"ok": True, "action": "disclaimer_accepted"}

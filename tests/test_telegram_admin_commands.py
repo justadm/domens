@@ -71,6 +71,76 @@ def test_telegram_commands_replies_with_full_reference(monkeypatch) -> None:
     assert "command_commands" in events
 
 
+def test_telegram_start_existing_user_points_to_menu(monkeypatch) -> None:
+    sent: list[tuple[str, str, dict | None]] = []
+    events: list[str] = []
+
+    async def _fake_send(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        sent.append((chat_id, text, reply_markup))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send)
+    monkeypatch.setattr(
+        tg.store,
+        "upsert_telegram_user",
+        lambda *args, **kwargs: SimpleNamespace(disclaimer_accepted_at="2026-06-12T10:00:00+00:00"),
+    )
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("/start")))
+
+    assert result["action"] == "start_existing_user"
+    assert sent
+    assert "Главное меню" in sent[0][1]
+    assert "/commands" in sent[0][1]
+    assert "списка команд" not in sent[0][1]
+    buttons = [button["text"] for row in sent[0][2]["keyboard"] for button in row]
+    assert "Профиль" in buttons
+    assert "Watch" in buttons
+    assert "command_start" in events
+
+
+def test_disclaimer_acceptance_points_to_menu(monkeypatch) -> None:
+    sent: list[tuple[str, str, dict | None]] = []
+    events: list[str] = []
+    answered: list[tuple[str, str | None]] = []
+
+    async def _fake_send(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        sent.append((chat_id, text, reply_markup))
+        return {"ok": True}
+
+    async def _fake_answer(callback_query_id: str, text: str | None = None) -> dict:
+        answered.append((callback_query_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send)
+    monkeypatch.setattr(tg, "answer_telegram_callback", _fake_answer)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "mark_disclaimer_accepted", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+
+    result = asyncio.run(
+        tg.process_telegram_update(
+            {
+                "callback_query": {
+                    "id": "cb1",
+                    "data": "accept_disclaimer",
+                    "from": {"id": 13903713},
+                    "message": {"chat": {"id": 13903713}},
+                }
+            }
+        )
+    )
+
+    assert result["action"] == "disclaimer_accepted"
+    assert answered == [("cb1", None)]
+    assert sent
+    assert "Главное меню" in sent[0][1]
+    assert "/commands" in sent[0][1]
+    assert "/profile, /watch" not in sent[0][1]
+    assert "disclaimer_accepted" in events
+
+
 def test_telegram_profile_replies(monkeypatch) -> None:
     sent: list[tuple[str, str]] = []
     events: list[str] = []
