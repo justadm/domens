@@ -706,6 +706,212 @@ class PostgresStore:
                 "prev_offset": prev_offset,
             }
 
+    def list_user_alerts_page(
+        self,
+        telegram_user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        search: str | None = None,
+        feedback: str | None = None,
+    ) -> dict:
+        safe_uid = str(telegram_user_id).strip()
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        q = (search or "").strip().lower()
+        target_feedback = (feedback or "").strip().lower()
+
+        empty = {
+            "items": [],
+            "total": 0,
+            "limit": safe_limit,
+            "offset": safe_offset,
+            "next_offset": None,
+            "prev_offset": None,
+        }
+        if not safe_uid:
+            return empty
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return empty
+
+            subscriptions = list(
+                session.execute(
+                    select(UserSubscriptionModel)
+                    .where(UserSubscriptionModel.user_id == user.id)
+                    .order_by(desc(UserSubscriptionModel.updated_at))
+                ).scalars()
+            )
+            destination_channels: dict[str, str] = {}
+            if user.telegram_chat_id:
+                destination_channels[str(user.telegram_chat_id)] = "telegram"
+            for sub in subscriptions:
+                if sub.channel_target:
+                    destination_channels[str(sub.channel_target)] = sub.channel_type
+
+            destinations = sorted(destination_channels)
+            if not destinations:
+                return empty
+
+            filters = [AlertModel.telegram_chat_id.in_(destinations)]
+            if q:
+                filters.append(
+                    or_(
+                        func.lower(DomainModel.fqdn).contains(q),
+                        func.lower(AlertModel.alert_type).contains(q),
+                        func.lower(AlertModel.telegram_chat_id).contains(q),
+                        func.lower(func.cast(AlertModel.explanation, Text)).contains(q),
+                    )
+                )
+            if target_feedback:
+                filters.append(
+                    exists(
+                        select(AlertFeedbackModel.id)
+                        .where(AlertFeedbackModel.alert_id == AlertModel.id)
+                        .where(AlertFeedbackModel.telegram_user_id == safe_uid)
+                        .where(func.lower(AlertFeedbackModel.feedback_type) == target_feedback)
+                    )
+                )
+
+            total_query = (
+                select(func.count())
+                .select_from(AlertModel)
+                .join(DomainModel, DomainModel.id == AlertModel.domain_id)
+                .where(and_(*filters))
+            )
+            total = int(session.execute(total_query).scalar() or 0)
+
+            rows = session.execute(
+                select(AlertModel, DomainModel)
+                .join(DomainModel, DomainModel.id == AlertModel.domain_id)
+                .where(and_(*filters))
+                .order_by(desc(AlertModel.created_at))
+                .offset(safe_offset)
+                .limit(safe_limit)
+            ).all()
+            alert_ids = [alert.id for alert, _domain in rows]
+
+            feedback_rows = []
+            if alert_ids:
+                feedback_rows = session.execute(
+                    select(AlertFeedbackModel)
+                    .where(AlertFeedbackModel.alert_id.in_(alert_ids))
+                    .where(AlertFeedbackModel.telegram_user_id == safe_uid)
+                    .order_by(desc(AlertFeedbackModel.created_at))
+                ).scalars()
+
+            latest_feedback_by_alert: dict[uuid.UUID, dict] = {}
+            feedback_counts_by_alert: dict[uuid.UUID, dict[str, int]] = {}
+            for row in feedback_rows:
+                counts = feedback_counts_by_alert.setdefault(row.alert_id, {})
+                counts[row.feedback_type] = counts.get(row.feedback_type, 0) + 1
+                latest_feedback_by_alert.setdefault(
+                    row.alert_id,
+                    {
+                        "type": row.feedback_type,
+                        "created_at": row.created_at.isoformat(),
+                        "payload": row.payload or {},
+                    },
+                )
+
+            items: list[dict] = []
+            for alert, domain in rows:
+                channel_target = str(alert.telegram_chat_id)
+                items.append(
+                    {
+                        "id": str(alert.id),
+                        "domain_id": str(domain.id),
+                        "domain": domain.fqdn,
+                        "alert_type": alert.alert_type,
+                        "channel": destination_channels.get(channel_target, "telegram"),
+                        "channel_target": channel_target,
+                        "acknowledged": bool(alert.acknowledged),
+                        "created_at": alert.created_at.isoformat(),
+                        "acknowledged_at": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+                        "explanation": alert.explanation or {},
+                        "latest_feedback": latest_feedback_by_alert.get(alert.id),
+                        "feedback_counts": feedback_counts_by_alert.get(alert.id, {}),
+                    }
+                )
+
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
+
+    def record_user_alert_feedback(
+        self,
+        alert_id: str,
+        telegram_user_id: str,
+        feedback_type: str,
+        payload: dict | None = None,
+    ) -> dict | None:
+        safe_uid = str(telegram_user_id).strip()
+        safe_feedback = str(feedback_type).strip().lower()
+        if not safe_uid or safe_feedback not in {"more", "less", "never"}:
+            return None
+        try:
+            safe_alert_id = uuid.UUID(str(alert_id))
+        except ValueError:
+            return None
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return None
+
+            destinations: set[str] = set()
+            if user.telegram_chat_id:
+                destinations.add(str(user.telegram_chat_id))
+            subscription_targets = session.execute(
+                select(UserSubscriptionModel.channel_target).where(UserSubscriptionModel.user_id == user.id)
+            ).scalars()
+            destinations.update(str(target) for target in subscription_targets if target)
+            if not destinations:
+                return None
+
+            row = session.execute(
+                select(AlertModel, DomainModel)
+                .join(DomainModel, DomainModel.id == AlertModel.domain_id)
+                .where(AlertModel.id == safe_alert_id)
+                .where(AlertModel.telegram_chat_id.in_(sorted(destinations)))
+                .limit(1)
+            ).first()
+            if not row:
+                return None
+
+            alert, domain = row
+            feedback = AlertFeedbackModel(
+                alert_id=alert.id,
+                telegram_user_id=safe_uid,
+                feedback_type=safe_feedback,
+                payload=payload or {},
+            )
+            session.add(feedback)
+            session.commit()
+            session.refresh(feedback)
+            return {
+                "alert_id": str(alert.id),
+                "domain": domain.fqdn,
+                "channel_target": str(alert.telegram_chat_id),
+                "feedback": {
+                    "type": feedback.feedback_type,
+                    "created_at": feedback.created_at.isoformat(),
+                    "payload": feedback.payload or {},
+                },
+            }
+
     def list_user_domains_page(
         self,
         telegram_user_id: str,

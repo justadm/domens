@@ -88,17 +88,67 @@ def _watch_rules_keyboard(rules: list[dict]) -> dict | None:
     return {"inline_keyboard": keyboard}
 
 
-def _main_menu_keyboard() -> dict:
+def _reply_keyboard(rows: list[list[str]]) -> dict:
     return {
-        "keyboard": [
-            [{"text": "/profile"}, {"text": "/limits"}],
-            [{"text": "/watch list"}],
-            [{"text": "/alerts on"}, {"text": "/alerts off"}],
-            [{"text": "/domains now ai tools"}],
-            [{"text": "/help"}],
-        ],
+        "keyboard": [[{"text": text} for text in row] for row in rows],
         "resize_keyboard": True,
     }
+
+
+def _main_menu_keyboard() -> dict:
+    return _reply_keyboard(
+        [
+            ["Профиль", "Лимиты"],
+            ["Watch", "Алерты"],
+            ["Найти домены"],
+            ["Помощь"],
+        ]
+    )
+
+
+def _watch_menu_keyboard() -> dict:
+    return _reply_keyboard(
+        [
+            ["Список watch"],
+            ["Добавить правило", "Стартовый набор"],
+            ["Фокус core", "Фокус wide"],
+            ["Назад"],
+        ]
+    )
+
+
+def _alerts_menu_keyboard() -> dict:
+    return _reply_keyboard(
+        [
+            ["Алерты ON", "Алерты OFF"],
+            ["Лимиты"],
+            ["Назад"],
+        ]
+    )
+
+
+def _menu_text_alias(text: str) -> str:
+    value = text.strip()
+    key = value.lower()
+    aliases = {
+        "профиль": "/profile",
+        "лимиты": "/limits",
+        "помощь": "/help",
+        "назад": "/menu",
+        "список watch": "/watch list",
+        "стартовый набор": "/watch seed",
+        "фокус core": "/watch focus core",
+        "фокус wide": "/watch focus wide",
+        "алерты on": "/alerts on",
+        "алерты off": "/alerts off",
+    }
+    specials = {
+        "watch": "__watch_menu",
+        "алерты": "__alerts_menu",
+        "добавить правило": "__watch_add_prompt",
+        "найти домены": "__domains_prompt",
+    }
+    return aliases.get(key) or specials.get(key) or value
 
 
 def _seed_watch_queries() -> list[str]:
@@ -225,9 +275,25 @@ async def _handle_start(chat_id: str, user_id: str, locale: str, username: str |
 
 async def _handle_help(chat_id: str, user_id: str) -> dict:
     help_text = (
-        "Доступные команды:\n"
+        "Быстрые действия:\n"
+        "- Профиль: статус, роль, алерты\n"
+        "- Watch: правила мониторинга\n"
+        "- Алерты: включить или выключить уведомления\n"
+        "- Найти домены: разовый подбор кандидатов\n\n"
+        "Полный список команд: /commands\n"
+        "Главное меню: /menu"
+    )
+    await send_telegram_message(chat_id, help_text, reply_markup=_main_menu_keyboard())
+    store.log_bot_event("command_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "help_sent"}
+
+
+async def _handle_commands(chat_id: str, user_id: str) -> dict:
+    commands_text = (
+        "Все команды:\n"
         "/start - начало работы и условия\n"
-        "/help - список команд\n"
+        "/help - краткая помощь\n"
+        "/commands - полный список команд\n"
         "/limits - лимиты алертов за 24ч\n"
         "/profile - профиль и статус\n"
         "/watch add <query> - добавить правило\n"
@@ -246,17 +312,50 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
         "/cancel <cp_token> - отменить действие Copilot"
     )
     if _is_admin_user(user_id):
-        help_text += (
+        commands_text += (
             "\n\nАдмин-команды:\n"
+            "/admin help - помощь по админ-командам\n"
             "/admin roles - список ролей\n"
             "/admin users [search] - пользователи и роли\n"
             "/admin access-events [action] [limit] - аудит доступа\n"
             "/admin grant <telegram_user_id> <role>\n"
             "/admin revoke <telegram_user_id> <role>"
         )
-    await send_telegram_message(chat_id, help_text, reply_markup=_main_menu_keyboard())
-    store.log_bot_event("command_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
-    return {"ok": True, "action": "help_sent"}
+    await send_telegram_message(chat_id, commands_text, reply_markup=_main_menu_keyboard())
+    store.log_bot_event("command_commands", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "commands_sent"}
+
+
+async def _handle_watch_menu(chat_id: str, user_id: str) -> dict:
+    await send_telegram_message(chat_id, "Watch-правила:", reply_markup=_watch_menu_keyboard())
+    store.log_bot_event("command_watch_menu", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "watch_menu_sent"}
+
+
+async def _handle_alerts_menu(chat_id: str, user_id: str) -> dict:
+    await send_telegram_message(chat_id, "Алерты:", reply_markup=_alerts_menu_keyboard())
+    store.log_bot_event("command_alerts_menu", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "alerts_menu_sent"}
+
+
+async def _handle_watch_add_prompt(chat_id: str, user_id: str) -> dict:
+    await send_telegram_message(
+        chat_id,
+        "Напишите команду:\n/watch add <тема>\n\nПример:\n/watch add ai crm",
+        reply_markup=_watch_menu_keyboard(),
+    )
+    store.log_bot_event("command_watch_add_prompt", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "watch_add_prompt_sent"}
+
+
+async def _handle_domains_prompt(chat_id: str, user_id: str) -> dict:
+    await send_telegram_message(
+        chat_id,
+        "Напишите команду:\n/domains now <тема>\n\nПример:\n/domains now ai tools",
+        reply_markup=_main_menu_keyboard(),
+    )
+    store.log_bot_event("command_domains_prompt", telegram_user_id=user_id, telegram_chat_id=chat_id)
+    return {"ok": True, "action": "domains_prompt_sent"}
 
 
 async def _handle_limits(chat_id: str, user_id: str) -> dict:
@@ -586,6 +685,21 @@ async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
 
     action = parts[1].strip().lower()
 
+    if action == "help":
+        await send_telegram_text(
+            chat_id,
+            (
+                "Админ-команды:\n"
+                "/admin roles - список ролей\n"
+                "/admin users [search] - пользователи и роли\n"
+                "/admin access-events [action] [limit] - аудит доступа\n"
+                "/admin grant <telegram_user_id> <role>\n"
+                "/admin revoke <telegram_user_id> <role>"
+            ),
+        )
+        store.log_bot_event("admin_help", telegram_user_id=user_id, telegram_chat_id=chat_id)
+        return {"ok": True, "action": "admin_help"}
+
     if action == "roles":
         roles = store.list_roles()
         lines = ["Роли:"]
@@ -897,11 +1011,23 @@ async def process_telegram_update(payload: dict) -> dict:
         return {"ok": True, "action": "ignored"}
 
     text, chat_id, user_id, locale, username, first_name = message
+    text = _menu_text_alias(text)
     store.upsert_telegram_user(user_id, chat_id, username, first_name, locale)
     store.log_bot_event("incoming_message", telegram_user_id=user_id, telegram_chat_id=chat_id, payload={"text": text})
 
+    if text == "__watch_menu":
+        return await _handle_watch_menu(chat_id, user_id)
+    if text == "__alerts_menu":
+        return await _handle_alerts_menu(chat_id, user_id)
+    if text == "__watch_add_prompt":
+        return await _handle_watch_add_prompt(chat_id, user_id)
+    if text == "__domains_prompt":
+        return await _handle_domains_prompt(chat_id, user_id)
+
     if text.startswith("/start"):
         return await _handle_start(chat_id, user_id, locale, username, first_name)
+    if text.startswith("/commands") or text.startswith("/help full"):
+        return await _handle_commands(chat_id, user_id)
     if text.startswith("/help"):
         return await _handle_help(chat_id, user_id)
     if text.startswith("/menu"):

@@ -116,6 +116,12 @@ class DomainMonitoringService:
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
+    def _is_alert_suppressed(self, fqdn: str, destination: str) -> bool:
+        return any(
+            self.store.should_suppress_alert(fqdn, destination, reason=reason)
+            for reason in ("same_domain", "user_never")
+        )
+
     async def run_once(self) -> dict:
         if self._run_once_lock.locked():
             return {
@@ -204,7 +210,7 @@ class DomainMonitoringService:
                                 async with per_target_lock:
                                     if alerts_sent >= global_run_limit:
                                         destination = ""
-                                    elif self.store.should_suppress_alert(fqdn, destination, reason="same_domain"):
+                                    elif self._is_alert_suppressed(fqdn, destination):
                                         destination = ""
                                     else:
                                         if destination_key not in per_target_daily_sent:
@@ -282,7 +288,7 @@ class DomainMonitoringService:
                                 within_minutes=settings.monitor_alert_cooldown_minutes,
                             ):
                                 continue
-                            if self.store.should_suppress_alert(fqdn, channel_target, reason="same_domain"):
+                            if self._is_alert_suppressed(fqdn, channel_target):
                                 continue
                             per_target_sent[key] = per_target_sent.get(key, 0) + 1
                             per_target_daily_sent[key] += 1
@@ -337,7 +343,7 @@ class DomainMonitoringService:
                                 within_minutes=settings.monitor_alert_cooldown_minutes,
                             ):
                                 continue
-                            if self.store.should_suppress_alert(fqdn, admin_chat_id, reason="same_domain"):
+                            if self._is_alert_suppressed(fqdn, admin_chat_id):
                                 continue
                             per_target_sent[key] = per_target_sent.get(key, 0) + 1
                             per_target_daily_sent[key] += 1

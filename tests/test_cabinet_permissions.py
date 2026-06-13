@@ -109,6 +109,117 @@ def test_cabinet_orders_page(monkeypatch) -> None:
     assert data["items"][0]["domain"] == "example.ru"
 
 
+def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> None:
+    client = TestClient(app)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+
+    def _fake_list_user_alerts_page(**kwargs):
+        captured.update(kwargs)
+        return {
+            "total": 1,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "id": "a1",
+                    "domain_id": "d1",
+                    "domain": "stackai.ru",
+                    "alert_type": "watch_rule_match:r1",
+                    "channel": "telegram",
+                    "channel_target": "13903713",
+                    "acknowledged": False,
+                    "created_at": "2026-06-13T09:00:00+00:00",
+                    "acknowledged_at": None,
+                    "explanation": {
+                        "score": 88.4,
+                        "status": "available",
+                        "provider": "timeweb",
+                        "matched_query": "stack ai",
+                        "tld": "ru",
+                        "length": 7,
+                        "risk": "provider_checked",
+                    },
+                    "latest_feedback": {
+                        "type": "more",
+                        "created_at": "2026-06-13T09:05:00+00:00",
+                    },
+                    "feedback_counts": {"more": 1},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(cabinet_router.store, "list_user_alerts_page", _fake_list_user_alerts_page)
+
+    response = client.get("/v1/cabinet/alerts?limit=20&offset=0&search=stack&feedback=more")
+    assert response.status_code == 200
+    data = response.json()
+    assert captured == {
+        "telegram_user_id": "13903713",
+        "limit": 20,
+        "offset": 0,
+        "search": "stack",
+        "feedback": "more",
+    }
+    assert data["items"][0]["domain"] == "stackai.ru"
+    assert data["items"][0]["explanation"]["score"] == 88.4
+    assert data["items"][0]["latest_feedback"]["type"] == "more"
+    assert "confirmation_token" not in data["items"][0]
+
+
+def test_cabinet_alert_feedback_records_choice_and_never_suppresses(monkeypatch) -> None:
+    client = TestClient(app)
+    recorded: dict[str, object] = {}
+    suppressions: list[tuple[str, str, str, int]] = []
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "record_user_alert_feedback",
+        lambda alert_id, telegram_user_id, feedback_type, payload=None: recorded.update(
+            {
+                "alert_id": alert_id,
+                "telegram_user_id": telegram_user_id,
+                "feedback_type": feedback_type,
+                "payload": payload,
+            }
+        )
+        or {
+            "alert_id": alert_id,
+            "domain": "stackai.ru",
+            "channel_target": "13903713",
+            "feedback": {"type": feedback_type, "created_at": "2026-06-13T09:05:00+00:00"},
+        },
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "suppress_alert",
+        lambda fqdn, destination, reason, days=30: suppressions.append((fqdn, destination, reason, days)),
+    )
+    monkeypatch.setattr(cabinet_router.store, "log_bot_event", lambda *_args, **_kwargs: None)
+
+    response = client.post("/v1/cabinet/alerts/a1/feedback", json={"feedback_type": "never"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["feedback"]["type"] == "never"
+    assert recorded["alert_id"] == "a1"
+    assert recorded["telegram_user_id"] == "13903713"
+    assert recorded["feedback_type"] == "never"
+    assert suppressions == [("stackai.ru", "13903713", "user_never", 365)]
+
+
 def test_cabinet_domain_details(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(

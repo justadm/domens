@@ -48,6 +48,10 @@ class WatchRuleUpdateRequest(BaseModel):
     daily_alert_limit: int | None = None
 
 
+class AlertFeedbackRequest(BaseModel):
+    feedback_type: str
+
+
 class CabinetProfileResponse(BaseModel):
     telegram_user_id: str
     username: str | None = None
@@ -106,6 +110,22 @@ class CabinetOrdersPageResponse(BaseModel):
     next_offset: int | None = None
     prev_offset: int | None = None
     items: list[dict]
+
+
+class CabinetAlertsPageResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
+    items: list[dict]
+
+
+class CabinetAlertFeedbackResponse(BaseModel):
+    ok: bool
+    alert_id: str
+    domain: str
+    feedback: dict
 
 
 class CabinetDomainDetailResponse(BaseModel):
@@ -397,6 +417,61 @@ async def cabinet_orders(
         search=search,
     )
     return CabinetOrdersPageResponse(**page)
+
+
+@router.get("/alerts", response_model=CabinetAlertsPageResponse)
+async def cabinet_alerts(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    search: str | None = None,
+    feedback: str | None = None,
+) -> CabinetAlertsPageResponse:
+    auth_user = _require_user(request)
+    page = store.list_user_alerts_page(
+        telegram_user_id=auth_user.telegram_user_id,
+        limit=limit,
+        offset=offset,
+        search=search,
+        feedback=feedback,
+    )
+    return CabinetAlertsPageResponse(**page)
+
+
+@router.post("/alerts/{alert_id}/feedback", response_model=CabinetAlertFeedbackResponse)
+async def cabinet_alert_feedback(
+    alert_id: str,
+    payload: AlertFeedbackRequest,
+    request: Request,
+) -> CabinetAlertFeedbackResponse:
+    auth_user = _require_user(request)
+    feedback_type = payload.feedback_type.strip().lower()
+    if feedback_type not in {"more", "less", "never"}:
+        raise HTTPException(status_code=400, detail="invalid feedback_type")
+
+    result = store.record_user_alert_feedback(
+        alert_id=alert_id,
+        telegram_user_id=auth_user.telegram_user_id,
+        feedback_type=feedback_type,
+        payload={"source": "cabinet"},
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="alert not found")
+
+    if feedback_type == "never":
+        store.suppress_alert(result["domain"], result["channel_target"], reason="user_never", days=365)
+
+    store.log_bot_event(
+        "cabinet_alert_feedback",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"alert_id": alert_id, "feedback_type": feedback_type},
+    )
+    return CabinetAlertFeedbackResponse(
+        ok=True,
+        alert_id=result["alert_id"],
+        domain=result["domain"],
+        feedback=result["feedback"],
+    )
 
 
 @router.get("/domains/{domain_id}", response_model=CabinetDomainDetailResponse)
