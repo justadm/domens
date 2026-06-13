@@ -98,10 +98,8 @@ def _reply_keyboard(rows: list[list[str]]) -> dict:
 def _main_menu_keyboard() -> dict:
     return _reply_keyboard(
         [
-            ["Профиль", "Лимиты"],
-            ["Watch", "Алерты"],
-            ["Найти домены"],
-            ["Помощь"],
+            ["👤 Профиль", "📊 Лимиты", "🎯 Радар"],
+            ["🔔 Алерты", "🔎 Найти", "❓ Помощь"],
         ]
     )
 
@@ -109,10 +107,8 @@ def _main_menu_keyboard() -> dict:
 def _watch_menu_keyboard() -> dict:
     return _reply_keyboard(
         [
-            ["Список watch"],
-            ["Добавить правило", "Стартовый набор"],
-            ["Фокус core", "Фокус wide"],
-            ["Назад"],
+            ["📋 Правила", "➕ Добавить", "🌱 Старт"],
+            ["🎚 Core", "🌐 Wide", "⬅️ Назад"],
         ]
     )
 
@@ -120,9 +116,8 @@ def _watch_menu_keyboard() -> dict:
 def _alerts_menu_keyboard() -> dict:
     return _reply_keyboard(
         [
-            ["Алерты ON", "Алерты OFF"],
-            ["Лимиты"],
-            ["Назад"],
+            ["✅ Включить", "⏸ Выключить", "📊 Лимиты"],
+            ["⬅️ Назад"],
         ]
     )
 
@@ -132,21 +127,35 @@ def _menu_text_alias(text: str) -> str:
     key = value.lower()
     aliases = {
         "профиль": "/profile",
+        "👤 профиль": "/profile",
         "лимиты": "/limits",
+        "📊 лимиты": "/limits",
         "помощь": "/help",
+        "❓ помощь": "/help",
         "назад": "/menu",
+        "⬅️ назад": "/menu",
         "список watch": "/watch list",
+        "📋 правила": "/watch list",
         "стартовый набор": "/watch seed",
+        "🌱 старт": "/watch seed",
         "фокус core": "/watch focus core",
+        "🎚 core": "/watch focus core",
         "фокус wide": "/watch focus wide",
+        "🌐 wide": "/watch focus wide",
         "алерты on": "/alerts on",
+        "✅ включить": "/alerts on",
         "алерты off": "/alerts off",
+        "⏸ выключить": "/alerts off",
     }
     specials = {
         "watch": "__watch_menu",
+        "🎯 радар": "__watch_menu",
         "алерты": "__alerts_menu",
+        "🔔 алерты": "__alerts_menu",
         "добавить правило": "__watch_add_prompt",
+        "➕ добавить": "__watch_add_prompt",
         "найти домены": "__domains_prompt",
+        "🔎 найти": "__domains_prompt",
     }
     return aliases.get(key) or specials.get(key) or value
 
@@ -277,9 +286,9 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
     help_text = (
         "Быстрые действия:\n"
         "- Профиль: статус, роль, алерты\n"
-        "- Watch: правила мониторинга\n"
+        "- Радар: правила мониторинга\n"
         "- Алерты: включить или выключить уведомления\n"
-        "- Найти домены: разовый подбор кандидатов\n\n"
+        "- Найти: разовый подбор доменов\n\n"
         "Полный список команд: /commands\n"
         "Главное меню: /menu"
     )
@@ -327,13 +336,13 @@ async def _handle_commands(chat_id: str, user_id: str) -> dict:
 
 
 async def _handle_watch_menu(chat_id: str, user_id: str) -> dict:
-    await send_telegram_message(chat_id, "Watch-правила:", reply_markup=_watch_menu_keyboard())
+    await send_telegram_message(chat_id, "Радар доменов:", reply_markup=_watch_menu_keyboard())
     store.log_bot_event("command_watch_menu", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "watch_menu_sent"}
 
 
 async def _handle_alerts_menu(chat_id: str, user_id: str) -> dict:
-    await send_telegram_message(chat_id, "Алерты:", reply_markup=_alerts_menu_keyboard())
+    await send_telegram_message(chat_id, "Управление алертами:", reply_markup=_alerts_menu_keyboard())
     store.log_bot_event("command_alerts_menu", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "alerts_menu_sent"}
 
@@ -359,15 +368,29 @@ async def _handle_domains_prompt(chat_id: str, user_id: str) -> dict:
 
 
 async def _handle_limits(chat_id: str, user_id: str) -> dict:
+    alerts_enabled = store.get_telegram_alerts_enabled(user_id)
     usage_24h = store.get_user_alert_usage_24h(
         user_id,
         per_target_daily_limit=settings.monitor_alert_per_target_daily_limit,
     )
-    lines = [
-        "Лимиты за 24ч:",
-        f"- отправлено: {int(usage_24h.get('daily_sent') or 0)}",
-        f"- осталось: {int(usage_24h.get('daily_remaining_total') or 0)}",
-    ]
+    daily_sent = int(usage_24h.get("daily_sent") or 0)
+    daily_remaining = int(usage_24h.get("daily_remaining_total") or 0)
+    lines = ["Лимиты за 24ч:"]
+    if alerts_enabled:
+        lines.extend(
+            [
+                f"- отправлено: {daily_sent}",
+                f"- осталось: {daily_remaining}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "Алерты выключены.",
+                "Включить: 🔔 Алерты -> ✅ Включить.",
+                f"Отправлено сегодня: {daily_sent}",
+            ]
+        )
     channels = usage_24h.get("channels") or []
     if channels:
         lines.append("Каналы:")
@@ -406,16 +429,14 @@ async def _handle_profile(chat_id: str, user_id: str) -> dict:
     daily_sent = int(usage_24h.get("daily_sent") or 0)
     daily_remaining = int(usage_24h.get("daily_remaining_total") or 0)
     profile_text = (
-        f"Профиль:\n"
-        f"user_id: {user.telegram_user_id}\n"
-        f"role: {'admin' if _is_admin_user(user_id) else 'user'}\n"
-        f"username: @{user.username or '-'}\n"
-        f"chat_id: {user.telegram_chat_id or '-'}\n"
-        f"disclaimer: {'accepted' if user.disclaimer_accepted_at else 'not accepted'}\n"
-        f"alerts: {'on' if alerts_enabled else 'off'}\n"
-        f"alerts_24h_sent: {daily_sent}\n"
-        f"alerts_24h_remaining: {daily_remaining}\n"
-        f"active watch rules: {rules_count}"
+        f"Профиль\n"
+        f"Роль: {'admin' if _is_admin_user(user_id) else 'user'}\n"
+        f"Username: @{user.username or '-'}\n"
+        f"Алерты: {'включены' if alerts_enabled else 'выключены'}\n"
+        f"Активных правил: {rules_count}\n"
+        f"За 24ч: отправлено {daily_sent}, осталось {daily_remaining}\n\n"
+        f"Главное меню: /menu\n"
+        f"Полный список команд: /commands"
     )
     await send_telegram_text(chat_id, profile_text)
     store.log_bot_event("command_profile", telegram_user_id=user_id, telegram_chat_id=chat_id)

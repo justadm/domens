@@ -42,8 +42,8 @@ def test_telegram_help_replies_with_menu(monkeypatch) -> None:
     assert "/watch add" not in sent[0][1]
     assert sent[0][2] is not None
     buttons = [button["text"] for row in sent[0][2]["keyboard"] for button in row]
-    assert "Профиль" in buttons
-    assert "Watch" in buttons
+    assert "👤 Профиль" in buttons
+    assert "🎯 Радар" in buttons
     assert "command_help" in events
 
 
@@ -95,8 +95,8 @@ def test_telegram_start_existing_user_points_to_menu(monkeypatch) -> None:
     assert "/commands" in sent[0][1]
     assert "списка команд" not in sent[0][1]
     buttons = [button["text"] for row in sent[0][2]["keyboard"] for button in row]
-    assert "Профиль" in buttons
-    assert "Watch" in buttons
+    assert "👤 Профиль" in buttons
+    assert "🎯 Радар" in buttons
     assert "command_start" in events
 
 
@@ -176,12 +176,19 @@ def test_telegram_profile_replies(monkeypatch) -> None:
     assert result["action"] == "profile_sent"
     assert sent
     assert sent[0][0] == "13903713"
-    assert "user_id: 13903713" in sent[0][1]
-    assert "active watch rules: 2" in sent[0][1]
+    assert "Профиль" in sent[0][1]
+    assert "Роль: user" in sent[0][1]
+    assert "Username: @just" in sent[0][1]
+    assert "Алерты: включены" in sent[0][1]
+    assert "Активных правил: 2" in sent[0][1]
+    assert "За 24ч: отправлено 1, осталось 24" in sent[0][1]
+    assert "user_id:" not in sent[0][1]
+    assert "chat_id:" not in sent[0][1]
+    assert "disclaimer:" not in sent[0][1]
     assert "command_profile" in events
 
 
-def test_telegram_menu_replies_with_main_actions(monkeypatch) -> None:
+def test_telegram_menu_replies_with_icon_grid(monkeypatch) -> None:
     sent: list[tuple[str, str, dict | None]] = []
     events: list[str] = []
 
@@ -201,12 +208,17 @@ def test_telegram_menu_replies_with_main_actions(monkeypatch) -> None:
     assert sent[0][1] == "Главное меню:"
     keyboard = sent[0][2]
     assert keyboard is not None
+    assert [[button["text"] for button in row] for row in keyboard["keyboard"]] == [
+        ["👤 Профиль", "📊 Лимиты", "🎯 Радар"],
+        ["🔔 Алерты", "🔎 Найти", "❓ Помощь"],
+    ]
     buttons = [button["text"] for row in keyboard["keyboard"] for button in row]
-    assert "Профиль" in buttons
-    assert "Лимиты" in buttons
-    assert "Watch" in buttons
-    assert "Алерты" in buttons
-    assert "Помощь" in buttons
+    assert "👤 Профиль" in buttons
+    assert "📊 Лимиты" in buttons
+    assert "🎯 Радар" in buttons
+    assert "🔔 Алерты" in buttons
+    assert "🔎 Найти" in buttons
+    assert "❓ Помощь" in buttons
     assert "/profile" not in buttons
     assert "/watch seed" not in buttons
     assert "command_menu" in events
@@ -224,18 +236,72 @@ def test_telegram_watch_menu_button_opens_submenu(monkeypatch) -> None:
     monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
     monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
 
-    result = asyncio.run(tg.process_telegram_update(_telegram_message("Watch")))
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("🎯 Радар")))
 
     assert result["action"] == "watch_menu_sent"
     assert sent
-    assert sent[0][1] == "Watch-правила:"
+    assert sent[0][1] == "Радар доменов:"
     keyboard = sent[0][2]
     assert keyboard is not None
-    buttons = [button["text"] for row in keyboard["keyboard"] for button in row]
-    assert "Список watch" in buttons
-    assert "Добавить правило" in buttons
-    assert "Назад" in buttons
+    assert [[button["text"] for button in row] for row in keyboard["keyboard"]] == [
+        ["📋 Правила", "➕ Добавить", "🌱 Старт"],
+        ["🎚 Core", "🌐 Wide", "⬅️ Назад"],
+    ]
     assert "command_watch_menu" in events
+
+
+def test_telegram_alerts_menu_button_opens_submenu(monkeypatch) -> None:
+    sent: list[tuple[str, str, dict | None]] = []
+    events: list[str] = []
+
+    async def _fake_send(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        sent.append((chat_id, text, reply_markup))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("🔔 Алерты")))
+
+    assert result["action"] == "alerts_menu_sent"
+    assert sent
+    assert sent[0][1] == "Управление алертами:"
+    keyboard = sent[0][2]
+    assert keyboard is not None
+    assert [[button["text"] for button in row] for row in keyboard["keyboard"]] == [
+        ["✅ Включить", "⏸ Выключить", "📊 Лимиты"],
+        ["⬅️ Назад"],
+    ]
+    assert "command_alerts_menu" in events
+
+
+def test_telegram_limits_explains_when_alerts_disabled(monkeypatch) -> None:
+    sent: list[tuple[str, str]] = []
+    events: list[str] = []
+
+    async def _fake_send(chat_id: str, text: str) -> dict:
+        sent.append((chat_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+    monkeypatch.setattr(tg.store, "get_telegram_alerts_enabled", lambda _uid: False)
+    monkeypatch.setattr(
+        tg.store,
+        "get_user_alert_usage_24h",
+        lambda *_args, **_kwargs: {"daily_sent": 0, "daily_remaining_total": 0},
+    )
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("/limits")))
+
+    assert result["action"] == "limits_sent"
+    assert sent
+    assert "Алерты выключены" in sent[0][1]
+    assert "🔔 Алерты -> ✅ Включить" in sent[0][1]
+    assert "осталось: 0" not in sent[0][1]
+    assert "command_limits" in events
 
 
 def test_telegram_human_profile_button_dispatches_profile(monkeypatch) -> None:
@@ -268,11 +334,12 @@ def test_telegram_human_profile_button_dispatches_profile(monkeypatch) -> None:
     )
     monkeypatch.setattr(tg, "_is_admin_user", lambda _uid: False)
 
-    result = asyncio.run(tg.process_telegram_update(_telegram_message("Профиль")))
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("👤 Профиль")))
 
     assert result["action"] == "profile_sent"
     assert sent
-    assert "user_id: 13903713" in sent[0][1]
+    assert "Роль: user" in sent[0][1]
+    assert "user_id:" not in sent[0][1]
     assert "command_profile" in events
 
 
