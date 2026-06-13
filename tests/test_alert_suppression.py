@@ -9,17 +9,31 @@ class FakeStore:
     def __init__(self) -> None:
         self.alerts: list[dict] = []
         self.suppressions: set[tuple[str, str, str]] = set()
+        self.events: list[dict] = []
+        self.watch_targets: list[dict] = []
+        self.admin_chats: list[str] = []
 
     def list_active_watch_targets(self) -> list[dict]:
-        return []
+        return self.watch_targets
 
     def list_telegram_chats_by_user_ids(self, _user_ids: list[str]) -> list[str]:
-        return []
+        return self.admin_chats
+
+    def log_bot_event(self, event_type: str, **kwargs) -> None:
+        self.events.append({"event_type": event_type, **kwargs})
 
     def upsert_domain_snapshot(self, **_kwargs) -> None:
         return None
 
     def has_recent_alert(self, _fqdn: str, within_minutes: int = 60) -> bool:
+        return False
+
+    def has_recent_alert_for_destination(
+        self,
+        _fqdn: str,
+        destination: str,
+        within_minutes: int = 60,
+    ) -> bool:
         return False
 
     def count_recent_alerts_for_destination(
@@ -70,6 +84,9 @@ def test_same_domain_destination_is_suppressed_after_first_monitor_alert(monkeyp
     monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_daily_limit", 3)
     monkeypatch.setattr(monitoring.settings, "monitor_alert_cooldown_minutes", 1440)
     monkeypatch.setattr(monitoring.settings, "monitor_require_provider_check", True)
+    monkeypatch.setattr(monitoring.settings, "monitor_watchlist_only", False)
+    monkeypatch.setattr(monitoring.settings, "monitor_admin_fanout_enabled", False)
+    monkeypatch.setattr(monitoring.settings, "monitor_event_logging_enabled", True)
 
     first = asyncio.run(service.run_once())
     second = asyncio.run(service.run_once())
@@ -114,8 +131,131 @@ def test_user_never_suppression_blocks_future_monitor_alert(monkeypatch) -> None
     monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_daily_limit", 3)
     monkeypatch.setattr(monitoring.settings, "monitor_alert_cooldown_minutes", 1440)
     monkeypatch.setattr(monitoring.settings, "monitor_require_provider_check", True)
+    monkeypatch.setattr(monitoring.settings, "monitor_watchlist_only", False)
+    monkeypatch.setattr(monitoring.settings, "monitor_admin_fanout_enabled", False)
+    monkeypatch.setattr(monitoring.settings, "monitor_event_logging_enabled", True)
 
     result = asyncio.run(service.run_once())
 
     assert result["alerts_sent"] == 0
     assert fake_store.alerts == []
+
+
+def test_watchlist_only_canary_ignores_global_candidates_and_admin_fanout(monkeypatch) -> None:
+    fake_store = FakeStore()
+    fake_store.watch_targets = [
+        {
+            "rule_id": "rule-1",
+            "telegram_user_id": "13903713",
+            "query": "focus stack",
+            "tlds": [".ru"],
+            "min_score": None,
+            "max_length": None,
+            "daily_alert_limit": 1,
+            "channel_type": "telegram",
+            "channel_target": "13903713",
+        }
+    ]
+    fake_store.admin_chats = ["13903713"]
+    service = DomainMonitoringService(fake_store)  # type: ignore[arg-type]
+    service.timeweb_client = SimpleNamespace(is_configured=True)
+
+    checked: list[str] = []
+
+    monkeypatch.setattr(service, "_build_candidates", lambda: ["globalnoise.ru"])
+    monkeypatch.setattr(service, "_build_query_candidates", lambda _query, _tlds: ["focusstack.ru"])
+
+    async def fake_infer_status(fqdn: str, **_kwargs) -> tuple[str, None]:
+        checked.append(fqdn)
+        return "available", None
+
+    monkeypatch.setattr(monitoring, "infer_status", fake_infer_status)
+    monkeypatch.setattr(monitoring, "score_domain", lambda _fqdn: 90.0)
+    monkeypatch.setattr(monitoring, "build_confirmation_token", lambda: "cfm_token")
+
+    async def fake_send(*_args, **_kwargs) -> dict:
+        return {"mode": "mock"}
+
+    monkeypatch.setattr(monitoring, "send_telegram_alert", fake_send)
+    monkeypatch.setattr(monitoring.settings, "telegram_chat_id", "legacy-chat")
+    monkeypatch.setattr(monitoring.settings, "max_chat_id", "")
+    monkeypatch.setattr(monitoring.settings, "telegram_admin_user_ids", "13903713")
+    monkeypatch.setattr(monitoring.settings, "monitor_tlds", ".ru")
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_min_score", 70.0)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_statuses", "available")
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_global_run_limit", 3)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_run_limit", 1)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_daily_limit", 1)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_cooldown_minutes", 1440)
+    monkeypatch.setattr(monitoring.settings, "monitor_require_provider_check", True)
+    monkeypatch.setattr(monitoring.settings, "monitor_watchlist_only", True, raising=False)
+    monkeypatch.setattr(monitoring.settings, "monitor_admin_fanout_enabled", False, raising=False)
+    monkeypatch.setattr(monitoring.settings, "monitor_event_logging_enabled", True, raising=False)
+
+    result = asyncio.run(service.run_once())
+
+    assert checked == ["focusstack.ru"]
+    assert result["checked"] == 1
+    assert result["alerts_sent"] == 1
+    assert [alert["alert_type"] for alert in fake_store.alerts] == ["watch_rule_match:rule-1"]
+    assert fake_store.alerts[0]["telegram_chat_id"] == "13903713"
+
+
+def test_monitoring_run_writes_audit_events(monkeypatch) -> None:
+    fake_store = FakeStore()
+    fake_store.watch_targets = [
+        {
+            "rule_id": "rule-1",
+            "telegram_user_id": "13903713",
+            "query": "audit stack",
+            "tlds": [".ru"],
+            "min_score": None,
+            "max_length": None,
+            "daily_alert_limit": 1,
+            "channel_type": "telegram",
+            "channel_target": "13903713",
+        }
+    ]
+    service = DomainMonitoringService(fake_store)  # type: ignore[arg-type]
+    service.timeweb_client = SimpleNamespace(is_configured=True)
+
+    monkeypatch.setattr(service, "_build_candidates", lambda: [])
+    monkeypatch.setattr(service, "_build_query_candidates", lambda _query, _tlds: ["auditstack.ru"])
+
+    async def fake_infer_status(*_args, **_kwargs) -> tuple[str, None]:
+        return "available", None
+
+    monkeypatch.setattr(monitoring, "infer_status", fake_infer_status)
+    monkeypatch.setattr(monitoring, "score_domain", lambda _fqdn: 91.0)
+    monkeypatch.setattr(monitoring, "build_confirmation_token", lambda: "cfm_token")
+
+    async def fake_send(*_args, **_kwargs) -> dict:
+        return {"mode": "mock"}
+
+    monkeypatch.setattr(monitoring, "send_telegram_alert", fake_send)
+    monkeypatch.setattr(monitoring.settings, "telegram_chat_id", "")
+    monkeypatch.setattr(monitoring.settings, "max_chat_id", "")
+    monkeypatch.setattr(monitoring.settings, "telegram_admin_user_ids", "")
+    monkeypatch.setattr(monitoring.settings, "monitor_tlds", ".ru")
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_statuses", "available")
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_global_run_limit", 3)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_run_limit", 1)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_daily_limit", 1)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_cooldown_minutes", 1440)
+    monkeypatch.setattr(monitoring.settings, "monitor_require_provider_check", True)
+    monkeypatch.setattr(monitoring.settings, "monitor_watchlist_only", True, raising=False)
+    monkeypatch.setattr(monitoring.settings, "monitor_admin_fanout_enabled", False, raising=False)
+    monkeypatch.setattr(monitoring.settings, "monitor_event_logging_enabled", True, raising=False)
+
+    result = asyncio.run(service.run_once())
+
+    event_types = [event["event_type"] for event in fake_store.events]
+    assert result["alerts_sent"] == 1
+    assert "monitor_run_started" in event_types
+    assert "monitor_candidates_built" in event_types
+    assert "monitor_candidate_checked" in event_types
+    assert "monitor_alert_sent" in event_types
+    assert "monitor_run_finished" in event_types
+    sent_event = next(event for event in fake_store.events if event["event_type"] == "monitor_alert_sent")
+    assert sent_event["payload"]["fqdn"] == "auditstack.ru"
+    assert sent_event["payload"]["alert_type"] == "watch_rule_match:rule-1"

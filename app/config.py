@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     monitor_alert_per_target_run_limit: int = 1
     monitor_alert_per_target_daily_limit: int = 3
     monitor_alert_global_run_limit: int = 3
+    monitor_watchlist_only: bool = True
+    monitor_admin_fanout_enabled: bool = False
+    monitor_event_logging_enabled: bool = True
 
     copilot_llm_nlu_enabled: bool = False
     copilot_llm_provider: str = "ollama"

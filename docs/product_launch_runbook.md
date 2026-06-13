@@ -8,20 +8,45 @@
 - `/ready` returns `database=true`
 - Telegram smoke script passes on MSK
 - `MONITOR_ENABLED=false` until canary watchlist is configured
+- `MONITOR_WATCHLIST_ONLY=true` for the first canary
+- `MONITOR_ADMIN_FANOUT_ENABLED=false` for the first canary
+- `MONITOR_EVENT_LOGGING_ENABLED=true` while canary is under observation
 - `REGISTRATION_ENABLED=false` until manual approval
 
 ## Canary setup
 
 1. Enable one admin watchlist.
 2. Set daily alert limit to `1`.
-3. Keep global monitoring disabled.
-4. Observe 24 hours.
-5. Confirm:
+3. Keep global registration disabled.
+4. Run the first canary in watchlist-only mode:
+   - `MONITOR_ENABLED=true`;
+   - `MONITOR_WATCHLIST_ONLY=true`;
+   - `MONITOR_ADMIN_FANOUT_ENABLED=false`;
+   - `MONITOR_EVENT_LOGGING_ENABLED=true`;
+   - `MONITOR_ALERT_GLOBAL_RUN_LIMIT=1`;
+   - `MONITOR_ALERT_PER_TARGET_RUN_LIMIT=1`;
+   - `MONITOR_ALERT_PER_TARGET_DAILY_LIMIT=1`;
+   - `MONITOR_ALERT_COOLDOWN_MINUTES=1440`.
+5. Observe 24 hours.
+6. Confirm:
    - no repeated same-domain spam;
    - alerts include explanation;
    - feedback callbacks work;
    - `/help` and `/profile` work;
    - quality metrics are visible.
+7. Inspect monitor audit events:
+
+```bash
+ssh msk 'docker exec -i domens-postgres-1 psql -U domens -d domens -c "select created_at,event_type,telegram_chat_id,payload from bot_events where event_type like '\''monitor_%'\'' order by created_at desc limit 50;"'
+```
+
+Expected event types include:
+- `monitor_run_started`;
+- `monitor_candidates_built`;
+- `monitor_candidate_checked`;
+- `monitor_alert_skipped`;
+- `monitor_alert_sent`;
+- `monitor_run_finished`.
 
 ## Rollback
 

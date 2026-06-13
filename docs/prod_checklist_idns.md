@@ -45,6 +45,10 @@ Required values in `/opt/domens/.env`:
   - `MONITOR_ALERT_PER_TARGET_RUN_LIMIT=1`
   - `MONITOR_ALERT_PER_TARGET_DAILY_LIMIT=3`
   - `MONITOR_ALERT_COOLDOWN_MINUTES=1440`
+- first canary safety flags:
+  - `MONITOR_WATCHLIST_ONLY=true`
+  - `MONITOR_ADMIN_FANOUT_ENABLED=false`
+  - `MONITOR_EVENT_LOGGING_ENABLED=true`
 - `TELEGRAM_ADMIN_USER_IDS=13903713`
 
 ## 4) First run (nginx mode on msk)
@@ -121,6 +125,11 @@ Telegram checks:
 - `/watch list`
 - `ADMIN_CHAT_ID=<admin_chat_id> ./scripts/smoke_telegram_stage.sh`
 - ensure alerts are coming without noisy false positives.
+- while canary is active, inspect monitor audit events:
+
+```bash
+ssh msk 'docker exec -i domens-postgres-1 psql -U domens -d domens -c "select created_at,event_type,telegram_chat_id,payload from bot_events where event_type like '\''monitor_%'\'' order by created_at desc limit 50;"'
+```
 
 ## 8) Switch to real registration later
 Only after final validation:

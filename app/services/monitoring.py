@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import uuid
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -122,8 +123,37 @@ class DomainMonitoringService:
             for reason in ("same_domain", "user_never")
         )
 
+    def _log_monitor_event(
+        self,
+        event_type: str,
+        payload: dict,
+        telegram_user_id: str | None = None,
+        telegram_chat_id: str | None = None,
+    ) -> None:
+        if not settings.monitor_event_logging_enabled:
+            return
+        try:
+            self.store.log_bot_event(
+                event_type,
+                telegram_user_id=telegram_user_id,
+                telegram_chat_id=telegram_chat_id,
+                payload=payload,
+            )
+        except Exception:
+            # Monitoring must not stop because audit logging is temporarily unavailable.
+            pass
+
     async def run_once(self) -> dict:
+        run_id = str(uuid.uuid4())
         if self._run_once_lock.locked():
+            self._log_monitor_event(
+                "monitor_run_skipped",
+                {
+                    "run_id": run_id,
+                    "reason": "already_running",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
             return {
                 "checked": 0,
                 "alerts_sent": 0,
@@ -131,10 +161,31 @@ class DomainMonitoringService:
                 "finished_at": datetime.now(timezone.utc).isoformat(),
             }
         async with self._run_once_lock:
-            global_candidates = self._build_candidates()
+            started_at = datetime.now(timezone.utc).isoformat()
+            watchlist_only = bool(settings.monitor_watchlist_only)
+            admin_fanout_enabled = bool(settings.monitor_admin_fanout_enabled)
+            self._log_monitor_event(
+                "monitor_run_started",
+                {
+                    "run_id": run_id,
+                    "started_at": started_at,
+                    "watchlist_only": watchlist_only,
+                    "admin_fanout_enabled": admin_fanout_enabled,
+                    "global_run_limit": settings.monitor_alert_global_run_limit,
+                    "per_target_run_limit": settings.monitor_alert_per_target_run_limit,
+                    "per_target_daily_limit": settings.monitor_alert_per_target_daily_limit,
+                    "cooldown_minutes": settings.monitor_alert_cooldown_minutes,
+                    "require_provider_check": settings.monitor_require_provider_check,
+                },
+            )
+            global_candidates = [] if watchlist_only else self._build_candidates()
             watch_targets = self.store.list_active_watch_targets()
             admin_user_ids = self._admin_user_ids()
-            admin_chat_ids = self.store.list_telegram_chats_by_user_ids(admin_user_ids)
+            admin_chat_ids = (
+                self.store.list_telegram_chats_by_user_ids(admin_user_ids)
+                if admin_fanout_enabled
+                else []
+            )
             rule_candidates_map: dict[str, list[str]] = {}
             personal_candidates: set[str] = set()
 
@@ -152,6 +203,19 @@ class DomainMonitoringService:
                 personal_candidates.update(rc)
 
             candidates = sorted(set(global_candidates) | personal_candidates)
+            self._log_monitor_event(
+                "monitor_candidates_built",
+                {
+                    "run_id": run_id,
+                    "global_candidates_count": len(global_candidates),
+                    "personal_candidates_count": len(personal_candidates),
+                    "candidates_count": len(candidates),
+                    "watch_targets_count": len(watch_targets),
+                    "admin_chat_ids_count": len(admin_chat_ids),
+                    "watchlist_only": watchlist_only,
+                    "admin_fanout_enabled": admin_fanout_enabled,
+                },
+            )
             interesting_statuses = self._alert_statuses()
             alerts_sent = 0
             global_run_limit = max(1, int(settings.monitor_alert_global_run_limit))
@@ -168,30 +232,59 @@ class DomainMonitoringService:
 
             sem = asyncio.Semaphore(12)
 
+            def log_skip(fqdn: str, reason: str, payload: dict | None = None) -> None:
+                self._log_monitor_event(
+                    "monitor_alert_skipped",
+                    {"run_id": run_id, "fqdn": fqdn, "reason": reason, **(payload or {})},
+                )
+
             async def process_domain(fqdn: str) -> None:
                 nonlocal alerts_sent
                 async with sem:
-                    status, eta = await infer_status(
-                        fqdn,
-                        timeweb_client=self.timeweb_client,
-                        allow_heuristic_fallback=not settings.monitor_require_provider_check,
-                    )
-                    score = score_domain(fqdn)
-                    provider = "timeweb" if self.timeweb_client.is_configured else "heuristic"
-                    self.store.upsert_domain_snapshot(
-                        fqdn=fqdn,
-                        status=status,
-                        score=score,
-                        drop_time_estimated_at=eta,
-                        source="monitor",
-                        provider=provider,
-                    )
+                    try:
+                        status, eta = await infer_status(
+                            fqdn,
+                            timeweb_client=self.timeweb_client,
+                            allow_heuristic_fallback=not settings.monitor_require_provider_check,
+                        )
+                        score = score_domain(fqdn)
+                        provider = "timeweb" if self.timeweb_client.is_configured else "heuristic"
+                        self.store.upsert_domain_snapshot(
+                            fqdn=fqdn,
+                            status=status,
+                            score=score,
+                            drop_time_estimated_at=eta,
+                            source="monitor",
+                            provider=provider,
+                        )
+                        self._log_monitor_event(
+                            "monitor_candidate_checked",
+                            {
+                                "run_id": run_id,
+                                "fqdn": fqdn,
+                                "status": status,
+                                "score": round(float(score), 2),
+                                "provider": provider,
+                                "drop_time_estimated_at": eta.isoformat() if eta else None,
+                            },
+                        )
+                    except Exception as exc:
+                        self._log_monitor_event(
+                            "monitor_candidate_error",
+                            {"run_id": run_id, "fqdn": fqdn, "error": str(exc)},
+                        )
+                        raise
 
                     if status not in interesting_statuses:
+                        log_skip(fqdn, "status_not_interesting", {"status": status})
                         return
 
                     # Global fallback channel behavior (legacy).
-                    if score >= settings.monitor_alert_min_score and (settings.telegram_chat_id or settings.max_chat_id):
+                    if (
+                        not watchlist_only
+                        and score >= settings.monitor_alert_min_score
+                        and (settings.telegram_chat_id or settings.max_chat_id)
+                    ):
                         if not self.store.has_recent_alert(fqdn, within_minutes=settings.monitor_alert_cooldown_minutes):
                             token = build_confirmation_token()
                             destination = settings.telegram_chat_id or settings.max_chat_id
@@ -209,8 +302,10 @@ class DomainMonitoringService:
                                 )
                                 async with per_target_lock:
                                     if alerts_sent >= global_run_limit:
+                                        log_skip(fqdn, "global_run_limit", {"destination": destination})
                                         destination = ""
                                     elif self._is_alert_suppressed(fqdn, destination):
+                                        log_skip(fqdn, "suppressed", {"destination": destination, "scope": "global"})
                                         destination = ""
                                     else:
                                         if destination_key not in per_target_daily_sent:
@@ -221,8 +316,10 @@ class DomainMonitoringService:
                                             )
                                         effective_limit = dynamic_run_limit(per_target_daily_sent[destination_key])
                                         if per_target_sent.get(destination_key, 0) >= effective_limit:
+                                            log_skip(fqdn, "per_target_run_limit", {"destination": destination, "scope": "global"})
                                             destination = ""
                                         elif per_target_daily_sent[destination_key] >= per_target_daily_limit:
+                                            log_skip(fqdn, "per_target_daily_limit", {"destination": destination, "scope": "global"})
                                             destination = ""
                                         else:
                                             per_target_sent[destination_key] = per_target_sent.get(destination_key, 0) + 1
@@ -241,6 +338,23 @@ class DomainMonitoringService:
                                     if settings.max_chat_id:
                                         await send_max_alert(settings.max_chat_id, fqdn, token)
                                     self.store.suppress_alert(fqdn, destination, reason="same_domain", days=30)
+                                    self._log_monitor_event(
+                                        "monitor_alert_sent",
+                                        {
+                                            "run_id": run_id,
+                                            "fqdn": fqdn,
+                                            "destination": destination,
+                                            "channel_type": "telegram" if settings.telegram_chat_id else "max",
+                                            "alert_type": "monitor_match",
+                                            "token": token,
+                                            "explanation": explanation,
+                                        },
+                                        telegram_chat_id=destination if settings.telegram_chat_id else None,
+                                    )
+                        else:
+                            log_skip(fqdn, "recent_alert", {"scope": "global"})
+                    elif not watchlist_only and score < settings.monitor_alert_min_score:
+                        log_skip(fqdn, "score_below_global_threshold", {"score": round(float(score), 2)})
 
                     # Personalized monitoring by active watch-rules and subscriptions.
                     sent_keys: set[tuple[str, str]] = set()
@@ -249,20 +363,37 @@ class DomainMonitoringService:
                         if fqdn not in rule_candidates_map.get(rule_id, []):
                             continue
                         if not self._query_matches_domain(str(target.get("query") or ""), fqdn):
+                            log_skip(
+                                fqdn,
+                                "watch_query_mismatch",
+                                {"rule_id": rule_id, "query": str(target.get("query") or "")},
+                            )
                             continue
                         min_score = target.get("min_score")
                         if min_score is not None and score < float(min_score):
+                            log_skip(
+                                fqdn,
+                                "watch_min_score",
+                                {"rule_id": rule_id, "score": round(float(score), 2), "min_score": float(min_score)},
+                            )
                             continue
                         max_length = target.get("max_length")
                         if max_length is not None and len(fqdn.split(".", 1)[0]) > int(max_length):
+                            log_skip(
+                                fqdn,
+                                "watch_max_length",
+                                {"rule_id": rule_id, "max_length": int(max_length)},
+                            )
                             continue
 
                         channel_type = str(target.get("channel_type") or "").lower()
                         channel_target = str(target.get("channel_target") or "").strip()
                         if channel_type not in {"telegram", "max"} or not channel_target:
+                            log_skip(fqdn, "watch_invalid_channel", {"rule_id": rule_id, "channel_type": channel_type})
                             continue
                         key = (channel_type, channel_target)
                         if key in sent_keys:
+                            log_skip(fqdn, "watch_duplicate_destination", {"rule_id": rule_id, "channel_target": channel_target})
                             continue
                         async with per_target_lock:
                             target_daily_limit = max(
@@ -270,6 +401,7 @@ class DomainMonitoringService:
                                 min(int(target.get("daily_alert_limit") or per_target_daily_limit), 10),
                             )
                             if alerts_sent >= global_run_limit:
+                                log_skip(fqdn, "global_run_limit", {"rule_id": rule_id, "channel_target": channel_target})
                                 continue
                             if key not in per_target_daily_sent:
                                 per_target_daily_sent[key] = self.store.count_recent_alerts_for_destination(
@@ -279,16 +411,20 @@ class DomainMonitoringService:
                                 )
                             effective_limit = 1 if per_target_daily_sent[key] >= int(target_daily_limit * 0.8) else per_target_run_limit
                             if per_target_sent.get(key, 0) >= effective_limit:
+                                log_skip(fqdn, "per_target_run_limit", {"rule_id": rule_id, "channel_target": channel_target})
                                 continue
                             if per_target_daily_sent[key] >= target_daily_limit:
+                                log_skip(fqdn, "watch_daily_limit", {"rule_id": rule_id, "channel_target": channel_target})
                                 continue
                             if self.store.has_recent_alert_for_destination(
                                 fqdn,
                                 destination=channel_target,
                                 within_minutes=settings.monitor_alert_cooldown_minutes,
                             ):
+                                log_skip(fqdn, "recent_alert", {"rule_id": rule_id, "channel_target": channel_target})
                                 continue
                             if self._is_alert_suppressed(fqdn, channel_target):
+                                log_skip(fqdn, "suppressed", {"rule_id": rule_id, "channel_target": channel_target})
                                 continue
                             per_target_sent[key] = per_target_sent.get(key, 0) + 1
                             per_target_daily_sent[key] += 1
@@ -315,6 +451,21 @@ class DomainMonitoringService:
                         else:
                             await send_max_alert(channel_target, fqdn, token)
                         self.store.suppress_alert(fqdn, channel_target, reason="same_domain", days=30)
+                        self._log_monitor_event(
+                            "monitor_alert_sent",
+                            {
+                                "run_id": run_id,
+                                "fqdn": fqdn,
+                                "destination": channel_target,
+                                "channel_type": channel_type,
+                                "alert_type": f"watch_rule_match:{rule_id}",
+                                "rule_id": rule_id,
+                                "token": token,
+                                "explanation": explanation,
+                            },
+                            telegram_user_id=str(target.get("telegram_user_id") or "") or None,
+                            telegram_chat_id=channel_target if channel_type == "telegram" else None,
+                        )
 
                         sent_keys.add(key)
 
@@ -325,6 +476,7 @@ class DomainMonitoringService:
                             continue
                         async with per_target_lock:
                             if alerts_sent >= global_run_limit:
+                                log_skip(fqdn, "global_run_limit", {"admin_chat_id": admin_chat_id, "scope": "admin_fanout"})
                                 continue
                             if key not in per_target_daily_sent:
                                 per_target_daily_sent[key] = self.store.count_recent_alerts_for_destination(
@@ -334,16 +486,20 @@ class DomainMonitoringService:
                                 )
                             effective_limit = dynamic_run_limit(per_target_daily_sent[key])
                             if per_target_sent.get(key, 0) >= effective_limit:
+                                log_skip(fqdn, "per_target_run_limit", {"admin_chat_id": admin_chat_id, "scope": "admin_fanout"})
                                 continue
                             if per_target_daily_sent[key] >= per_target_daily_limit:
+                                log_skip(fqdn, "per_target_daily_limit", {"admin_chat_id": admin_chat_id, "scope": "admin_fanout"})
                                 continue
                             if self.store.has_recent_alert_for_destination(
                                 fqdn,
                                 destination=admin_chat_id,
                                 within_minutes=settings.monitor_alert_cooldown_minutes,
                             ):
+                                log_skip(fqdn, "recent_alert", {"admin_chat_id": admin_chat_id, "scope": "admin_fanout"})
                                 continue
                             if self._is_alert_suppressed(fqdn, admin_chat_id):
+                                log_skip(fqdn, "suppressed", {"admin_chat_id": admin_chat_id, "scope": "admin_fanout"})
                                 continue
                             per_target_sent[key] = per_target_sent.get(key, 0) + 1
                             per_target_daily_sent[key] += 1
@@ -366,15 +522,43 @@ class DomainMonitoringService:
                         )
                         await send_telegram_alert(admin_chat_id, fqdn, token, explanation=explanation)
                         self.store.suppress_alert(fqdn, admin_chat_id, reason="same_domain", days=30)
+                        self._log_monitor_event(
+                            "monitor_alert_sent",
+                            {
+                                "run_id": run_id,
+                                "fqdn": fqdn,
+                                "destination": admin_chat_id,
+                                "channel_type": "telegram",
+                                "alert_type": "admin_fanout",
+                                "token": token,
+                                "explanation": explanation,
+                            },
+                            telegram_chat_id=admin_chat_id,
+                        )
                         sent_keys.add(key)
 
-            await asyncio.gather(*(process_domain(fqdn) for fqdn in candidates))
+            try:
+                await asyncio.gather(*(process_domain(fqdn) for fqdn in candidates))
+            except Exception as exc:
+                self._log_monitor_event(
+                    "monitor_run_failed",
+                    {
+                        "run_id": run_id,
+                        "error": str(exc),
+                        "checked": len(candidates),
+                        "alerts_sent": alerts_sent,
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                raise
 
-            return {
+            result = {
                 "checked": len(candidates),
                 "alerts_sent": alerts_sent,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
             }
+            self._log_monitor_event("monitor_run_finished", {"run_id": run_id, **result})
+            return result
 
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():
