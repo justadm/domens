@@ -428,13 +428,18 @@ async def _handle_profile(chat_id: str, user_id: str) -> dict:
     )
     daily_sent = int(usage_24h.get("daily_sent") or 0)
     daily_remaining = int(usage_24h.get("daily_remaining_total") or 0)
+    daily_usage_text = (
+        f"За 24ч: отправлено {daily_sent}, осталось {daily_remaining}"
+        if alerts_enabled
+        else f"За 24ч: отправлено {daily_sent}"
+    )
     profile_text = (
         f"Профиль\n"
         f"Роль: {'admin' if _is_admin_user(user_id) else 'user'}\n"
         f"Username: @{user.username or '-'}\n"
         f"Алерты: {'включены' if alerts_enabled else 'выключены'}\n"
         f"Активных правил: {rules_count}\n"
-        f"За 24ч: отправлено {daily_sent}, осталось {daily_remaining}\n\n"
+        f"{daily_usage_text}\n\n"
         f"Главное меню: /menu\n"
         f"Полный список команд: /commands"
     )

@@ -188,6 +188,44 @@ def test_telegram_profile_replies(monkeypatch) -> None:
     assert "command_profile" in events
 
 
+def test_telegram_profile_does_not_show_remaining_when_alerts_disabled(monkeypatch) -> None:
+    sent: list[tuple[str, str]] = []
+
+    async def _fake_send(chat_id: str, text: str) -> dict:
+        sent.append((chat_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tg.store,
+        "get_telegram_user",
+        lambda _uid: SimpleNamespace(
+            telegram_user_id="13903713",
+            telegram_chat_id="13903713",
+            username="just",
+            disclaimer_accepted_at="2026-06-12T10:00:00+00:00",
+        ),
+    )
+    monkeypatch.setattr(tg.store, "get_watch_rules_count", lambda _uid: 10)
+    monkeypatch.setattr(tg.store, "get_telegram_alerts_enabled", lambda _uid: False)
+    monkeypatch.setattr(
+        tg.store,
+        "get_user_alert_usage_24h",
+        lambda *_args, **_kwargs: {"daily_sent": 0, "daily_remaining_total": 0},
+    )
+    monkeypatch.setattr(tg, "_is_admin_user", lambda _uid: True)
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("/profile")))
+
+    assert result["action"] == "profile_sent"
+    assert sent
+    assert "Алерты: выключены" in sent[0][1]
+    assert "За 24ч: отправлено 0" in sent[0][1]
+    assert "осталось" not in sent[0][1]
+
+
 def test_telegram_menu_replies_with_icon_grid(monkeypatch) -> None:
     sent: list[tuple[str, str, dict | None]] = []
     events: list[str] = []
