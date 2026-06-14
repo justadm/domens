@@ -76,6 +76,47 @@ def _alert_button_callbacks(token: str) -> list[str]:
     return [str(item) for item in callbacks]
 
 
+def _digest_button_rows(items: list[dict]) -> list[list[dict]]:
+    rows: list[list[dict]] = []
+    for item in items:
+        domain = str(item.get("domain") or "domain")
+        token = str(item.get("token") or "")
+        if not token:
+            continue
+        rows.append(
+            [
+                {"text": f"❓ {domain[:22]}", "callback_data": f"feedback:why:{token}"},
+                {"text": "👍", "callback_data": f"feedback:more:{token}"},
+                {"text": "👎", "callback_data": f"feedback:less:{token}"},
+                {"text": "🚫", "callback_data": f"feedback:never:{token}"},
+            ]
+        )
+    return rows
+
+
+def _build_digest_text(items: list[dict]) -> str:
+    lines = ["Дайджест радара:"]
+    for index, item in enumerate(items, start=1):
+        explanation = item.get("explanation") if isinstance(item.get("explanation"), dict) else {}
+        score = explanation.get("score") if explanation else item.get("score")
+        status = explanation.get("status") if explanation else item.get("status")
+        tld = str(explanation.get("tld") or "").lstrip(".") if explanation else ""
+        watch = explanation.get("matched_query") if explanation else None
+        details = [str(item.get("domain") or "-")]
+        if score is not None:
+            details.append(f"score {score}")
+        if status:
+            details.append(str(status))
+        if tld:
+            details.append(f".{tld}")
+        lines.append(f"{index}. " + " | ".join(details))
+        if watch:
+            lines.append(f"   watch: {watch}")
+    lines.append("")
+    lines.append("Кнопки под сообщением: почему, больше таких, меньше таких, не повторять.")
+    return "\n".join(lines)
+
+
 async def send_telegram_alert(chat_id: str, domain: str, token: str, explanation: dict | None = None) -> dict:
     bot_token = settings.telegram_bot_token
     text = _build_alert_text(domain, explanation)
@@ -117,6 +158,54 @@ async def send_telegram_alert(chat_id: str, domain: str, token: str, explanation
         "mode": "telegram",
         "chat_id": chat_id,
         "domain": domain,
+        "message_id": str(data.get("result", {}).get("message_id", "")),
+        "buttons": buttons,
+    }
+
+
+async def send_telegram_digest(chat_id: str, items: list[dict]) -> dict:
+    bot_token = settings.telegram_bot_token
+    safe_items = sorted(
+        items,
+        key=lambda item: float((item.get("explanation") or {}).get("score") or item.get("score") or 0),
+        reverse=True,
+    )[:5]
+    text = _build_digest_text(safe_items)
+    buttons = [button["callback_data"] for row in _digest_button_rows(safe_items) for button in row]
+    if not bot_token:
+        return {
+            "mode": "mock",
+            "chat_id": chat_id,
+            "text": text,
+            "items_count": len(safe_items),
+            "items": safe_items,
+            "buttons": buttons,
+        }
+
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": {"inline_keyboard": _digest_button_rows(safe_items)},
+    }
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        try:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            return {
+                "mode": "telegram_error",
+                "chat_id": chat_id,
+                "items_count": len(safe_items),
+                "error": str(exc),
+                "buttons": buttons,
+            }
+
+    return {
+        "mode": "telegram",
+        "chat_id": chat_id,
+        "items_count": len(safe_items),
         "message_id": str(data.get("result", {}).get("message_id", "")),
         "buttons": buttons,
     }

@@ -12,6 +12,7 @@ from app.services.notifications import (
     build_confirmation_token,
     send_max_alert,
     send_telegram_alert,
+    send_telegram_digest,
 )
 from app.services.store import PostgresStore
 from app.services.timeweb_api import TimewebApiClient
@@ -228,6 +229,8 @@ class DomainMonitoringService:
             per_target_run_limit = max(1, settings.monitor_alert_per_target_run_limit)
             per_target_daily_limit = max(per_target_run_limit, settings.monitor_alert_per_target_daily_limit)
             per_target_lock = asyncio.Lock()
+            digest_items: dict[str, list[dict]] = {}
+            digest_lock = asyncio.Lock()
             def dynamic_run_limit(daily_sent: int) -> int:
                 threshold = int(per_target_daily_limit * 0.8)
                 if daily_sent >= threshold:
@@ -455,7 +458,15 @@ class DomainMonitoringService:
                         )
 
                         if channel_type == "telegram":
-                            await send_telegram_alert(channel_target, fqdn, token, explanation=explanation)
+                            async with digest_lock:
+                                digest_items.setdefault(channel_target, []).append(
+                                    {
+                                        "domain": fqdn,
+                                        "token": token,
+                                        "rule_id": rule_id,
+                                        "explanation": explanation,
+                                    }
+                                )
                         else:
                             await send_max_alert(channel_target, fqdn, token)
                         self.store.suppress_alert(fqdn, channel_target, reason="same_domain", days=30)
@@ -547,6 +558,24 @@ class DomainMonitoringService:
 
             try:
                 await asyncio.gather(*(process_domain(fqdn) for fqdn in candidates))
+                for chat_id, items in digest_items.items():
+                    sorted_items = sorted(
+                        items,
+                        key=lambda item: float((item.get("explanation") or {}).get("score") or 0),
+                        reverse=True,
+                    )[:5]
+                    delivery = await send_telegram_digest(chat_id, sorted_items)
+                    self._log_monitor_event(
+                        "monitor_digest_sent",
+                        {
+                            "run_id": run_id,
+                            "destination": chat_id,
+                            "items_count": len(sorted_items),
+                            "domains": [str(item.get("domain") or "") for item in sorted_items],
+                            "delivery": delivery,
+                        },
+                        telegram_chat_id=chat_id,
+                    )
             except Exception as exc:
                 self._log_monitor_event(
                     "monitor_run_failed",
