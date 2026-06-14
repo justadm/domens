@@ -11,6 +11,7 @@ from app.services.domain_checker import infer_status
 from app.services.domain_scoring import score_domain
 from app.services.notifications import (
     answer_telegram_callback,
+    build_alert_explanation_text,
     send_telegram_message,
     send_telegram_text,
 )
@@ -977,12 +978,14 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
         if len(parts) != 3:
             raise HTTPException(status_code=400, detail="invalid feedback callback_data")
         _, feedback_type, token = parts
-        if feedback_type not in {"more", "less", "never"}:
+        if feedback_type not in {"more", "less", "why", "never"}:
             raise HTTPException(status_code=400, detail="invalid feedback type")
 
         ok = store.record_alert_feedback(token, user_id, feedback_type)
+        alert = store.get_alert_by_token(token) if feedback_type in {"why", "never"} else None
+        if feedback_type == "why" and alert and chat_id:
+            await send_telegram_text(chat_id, build_alert_explanation_text(alert.domain, alert.explanation))
         if feedback_type == "never":
-            alert = store.get_alert_by_token(token)
             if alert:
                 store.suppress_alert(alert.domain, alert.telegram_chat_id, reason="user_never", days=365)
         store.log_bot_event(
@@ -992,7 +995,7 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             payload={"token": token, "feedback_type": feedback_type, "ok": ok},
         )
         if callback_query_id:
-            await answer_telegram_callback(callback_query_id, "Принято")
+            await answer_telegram_callback(callback_query_id, "Показываю почему" if feedback_type == "why" else "Принято")
         return {"ok": ok, "action": "feedback", "feedback_type": feedback_type}
 
     if callback_query_id:

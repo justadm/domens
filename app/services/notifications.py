@@ -9,58 +9,93 @@ def build_confirmation_token() -> str:
     return f"cfm_{uuid.uuid4().hex}"
 
 
+def build_alert_explanation_text(domain: str, explanation: dict | None = None) -> str:
+    lines = [f"Почему прислал {domain}:"]
+    if not explanation:
+        lines.append("- найден мониторингом как домен-кандидат")
+        return "\n".join(lines)
+
+    if explanation.get("score") is not None:
+        lines.append(f"- score: {explanation.get('score')}")
+    if explanation.get("status"):
+        lines.append(f"- статус: {explanation.get('status')}")
+    if explanation.get("tld"):
+        tld = str(explanation.get("tld") or "").lstrip(".")
+        lines.append(f"- TLD: .{tld}")
+    if explanation.get("matched_query"):
+        lines.append(f"- watch: {explanation.get('matched_query')}")
+    if explanation.get("risk"):
+        lines.append(f"- риск: {explanation.get('risk')}")
+    return "\n".join(lines)
+
+
+def _build_alert_text(domain: str, explanation: dict | None = None) -> str:
+    why_lines = build_alert_explanation_text(domain, explanation).splitlines()
+    lines = [
+        f"Домен-кандидат: {domain}",
+        "",
+        "Почему интересно:",
+        *[line.replace("- ", "", 1) if line.startswith("- ") else line for line in why_lines[1:]],
+        "",
+    ]
+    if settings.registration_enabled:
+        lines.append("Регистрация доступна после явного подтверждения.")
+    else:
+        lines.append("Регистрация сейчас выключена. Можно оценить домен и настроить радар.")
+    return "\n".join(lines)
+
+
+def _alert_button_rows(token: str) -> list[list[dict]]:
+    rows: list[list[dict]] = []
+    if settings.registration_enabled:
+        rows.append(
+            [
+                {"text": "🛒 Зарегистрировать", "callback_data": f"register:{token}"},
+                {"text": "⏭ Пропустить", "callback_data": f"skip:{token}"},
+            ]
+        )
+    else:
+        rows.append([{"text": "⏭ Пропустить", "callback_data": f"skip:{token}"}])
+    rows.extend(
+        [
+            [
+                {"text": "👍 Больше таких", "callback_data": f"feedback:more:{token}"},
+                {"text": "👎 Меньше таких", "callback_data": f"feedback:less:{token}"},
+            ],
+            [
+                {"text": "❓ Почему", "callback_data": f"feedback:why:{token}"},
+                {"text": "🚫 Не повторять", "callback_data": f"feedback:never:{token}"},
+            ],
+        ]
+    )
+    return rows
+
+
+def _alert_button_callbacks(token: str) -> list[str]:
+    callbacks = [button["callback_data"] for row in _alert_button_rows(token) for button in row]
+    return [str(item) for item in callbacks]
+
+
 async def send_telegram_alert(chat_id: str, domain: str, token: str, explanation: dict | None = None) -> dict:
     bot_token = settings.telegram_bot_token
-    details = ""
-    if explanation:
-        tld = str(explanation.get("tld") or "").lstrip(".")
-        details = (
-            f"\n\nScore: {explanation.get('score')}"
-            f"\nStatus: {explanation.get('status')}"
-            f"\nTLD: .{tld}"
-        )
+    text = _build_alert_text(domain, explanation)
+    buttons = _alert_button_callbacks(token)
     if not bot_token:
         return {
             "mode": "mock",
             "chat_id": chat_id,
             "domain": domain,
-            "text": (
-                f"Домен-кандидат: {domain}\n"
-                "Нажми «Зарегистрировать», чтобы создать заказ на регистрацию."
-                f"{details}"
-            ),
+            "text": text,
             "message_id": f"msg_{uuid.uuid4().hex[:8]}",
-            "buttons": [
-                f"register:{token}",
-                f"skip:{token}",
-                f"feedback:more:{token}",
-                f"feedback:less:{token}",
-                f"feedback:never:{token}",
-            ],
+            "buttons": buttons,
         }
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "chat_id": chat_id,
-        "text": (
-            f"Домен-кандидат: {domain}\n"
-            "Нажми «Зарегистрировать», чтобы создать заказ на регистрацию."
-            f"{details}"
-        ),
+        "text": text,
         "reply_markup": {
-            "inline_keyboard": [
-                [
-                    {"text": "Зарегистрировать", "callback_data": f"register:{token}"},
-                    {"text": "Пропустить", "callback_data": f"skip:{token}"},
-                ],
-                [
-                    {"text": "Больше таких", "callback_data": f"feedback:more:{token}"},
-                    {"text": "Меньше таких", "callback_data": f"feedback:less:{token}"},
-                ],
-                [
-                    {"text": "Не повторять", "callback_data": f"feedback:never:{token}"},
-                ]
-            ]
+            "inline_keyboard": _alert_button_rows(token)
         },
     }
 
@@ -75,7 +110,7 @@ async def send_telegram_alert(chat_id: str, domain: str, token: str, explanation
                 "chat_id": chat_id,
                 "domain": domain,
                 "error": str(exc),
-                "buttons": [f"register:{token}", f"skip:{token}"],
+                "buttons": buttons,
             }
 
     return {
@@ -83,13 +118,7 @@ async def send_telegram_alert(chat_id: str, domain: str, token: str, explanation
         "chat_id": chat_id,
         "domain": domain,
         "message_id": str(data.get("result", {}).get("message_id", "")),
-        "buttons": [
-            f"register:{token}",
-            f"skip:{token}",
-            f"feedback:more:{token}",
-            f"feedback:less:{token}",
-            f"feedback:never:{token}",
-        ],
+        "buttons": buttons,
     }
 
 

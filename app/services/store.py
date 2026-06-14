@@ -436,6 +436,7 @@ class Alert:
     telegram_chat_id: str
     confirmation_token: str
     acknowledged: bool = False
+    explanation: dict | None = None
 
 
 @dataclass
@@ -567,6 +568,7 @@ class PostgresStore:
                 telegram_chat_id=alert.telegram_chat_id,
                 confirmation_token=token,
                 acknowledged=alert.acknowledged,
+                explanation=alert.explanation or {},
             )
 
     def mark_alert_acknowledged(self, token: str) -> None:
@@ -857,7 +859,7 @@ class PostgresStore:
     ) -> dict | None:
         safe_uid = str(telegram_user_id).strip()
         safe_feedback = str(feedback_type).strip().lower()
-        if not safe_uid or safe_feedback not in {"more", "less", "never"}:
+        if not safe_uid or safe_feedback not in {"more", "less", "why", "never"}:
             return None
         try:
             safe_alert_id = uuid.UUID(str(alert_id))

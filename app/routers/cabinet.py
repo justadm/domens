@@ -446,7 +446,7 @@ async def cabinet_alert_feedback(
 ) -> CabinetAlertFeedbackResponse:
     auth_user = _require_user(request)
     feedback_type = payload.feedback_type.strip().lower()
-    if feedback_type not in {"more", "less", "never"}:
+    if feedback_type not in {"more", "less", "why", "never"}:
         raise HTTPException(status_code=400, detail="invalid feedback_type")
 
     result = store.record_user_alert_feedback(
