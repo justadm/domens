@@ -220,6 +220,49 @@ def test_cabinet_alert_feedback_records_choice_and_never_suppresses(monkeypatch)
     assert suppressions == [("stackai.ru", "13903713", "user_never", 365)]
 
 
+def test_cabinet_alert_feedback_less_adds_medium_suppression(monkeypatch) -> None:
+    client = TestClient(app)
+    recorded: dict[str, object] = {}
+    suppressions: list[tuple[str, str, str, int]] = []
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "record_user_alert_feedback",
+        lambda alert_id, telegram_user_id, feedback_type, payload=None: recorded.update(
+            {
+                "alert_id": alert_id,
+                "telegram_user_id": telegram_user_id,
+                "feedback_type": feedback_type,
+                "payload": payload,
+            }
+        )
+        or {
+            "alert_id": alert_id,
+            "domain": "stackai.ru",
+            "channel_target": "13903713",
+            "feedback": {"type": feedback_type, "created_at": "2026-06-13T09:05:00+00:00"},
+        },
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "suppress_alert",
+        lambda fqdn, destination, reason, days=30: suppressions.append((fqdn, destination, reason, days)),
+    )
+    monkeypatch.setattr(cabinet_router.store, "log_bot_event", lambda *_args, **_kwargs: None)
+
+    response = client.post("/v1/cabinet/alerts/a1/feedback", json={"feedback_type": "less"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert recorded["feedback_type"] == "less"
+    assert suppressions == [("stackai.ru", "13903713", "user_less", 90)]
+
+
 def test_cabinet_domain_details(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(

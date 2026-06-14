@@ -458,6 +458,8 @@ async def cabinet_alert_feedback(
     if not result:
         raise HTTPException(status_code=404, detail="alert not found")
 
+    if feedback_type == "less":
+        store.suppress_alert(result["domain"], result["channel_target"], reason="user_less", days=90)
     if feedback_type == "never":
         store.suppress_alert(result["domain"], result["channel_target"], reason="user_never", days=365)
 

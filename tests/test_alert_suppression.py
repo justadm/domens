@@ -141,6 +141,47 @@ def test_user_never_suppression_blocks_future_monitor_alert(monkeypatch) -> None
     assert fake_store.alerts == []
 
 
+def test_user_less_suppression_blocks_future_monitor_alert(monkeypatch) -> None:
+    fake_store = FakeStore()
+    fake_store.suppressions.add(("stackai.ru", "13903713", "user_less"))
+    service = DomainMonitoringService(fake_store)  # type: ignore[arg-type]
+    service.timeweb_client = SimpleNamespace(is_configured=True)
+
+    monkeypatch.setattr(service, "_build_candidates", lambda: ["stackai.ru"])
+
+    async def fake_infer_status(*_args, **_kwargs) -> tuple[str, None]:
+        return "available", None
+
+    monkeypatch.setattr(monitoring, "infer_status", fake_infer_status)
+    monkeypatch.setattr(monitoring, "score_domain", lambda _fqdn: 90.0)
+    monkeypatch.setattr(monitoring, "build_confirmation_token", lambda: "cfm_token")
+
+    async def fake_send(*_args, **_kwargs) -> dict:
+        return {"mode": "mock"}
+
+    monkeypatch.setattr(monitoring, "send_telegram_alert", fake_send)
+    monkeypatch.setattr(monitoring.settings, "telegram_chat_id", "13903713")
+    monkeypatch.setattr(monitoring.settings, "max_chat_id", "")
+    monkeypatch.setattr(monitoring.settings, "telegram_admin_user_ids", "")
+    monkeypatch.setattr(monitoring.settings, "monitor_tlds", ".ru")
+    monkeypatch.setattr(monitoring.settings, "monitor_seed_words", "stack")
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_min_score", 70.0)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_statuses", "available")
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_global_run_limit", 3)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_run_limit", 1)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_daily_limit", 3)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_cooldown_minutes", 1440)
+    monkeypatch.setattr(monitoring.settings, "monitor_require_provider_check", True)
+    monkeypatch.setattr(monitoring.settings, "monitor_watchlist_only", False)
+    monkeypatch.setattr(monitoring.settings, "monitor_admin_fanout_enabled", False)
+    monkeypatch.setattr(monitoring.settings, "monitor_event_logging_enabled", True)
+
+    result = asyncio.run(service.run_once())
+
+    assert result["alerts_sent"] == 0
+    assert fake_store.alerts == []
+
+
 def test_watchlist_only_canary_ignores_global_candidates_and_admin_fanout(monkeypatch) -> None:
     fake_store = FakeStore()
     fake_store.watch_targets = [

@@ -1027,9 +1027,12 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             raise HTTPException(status_code=400, detail="invalid feedback type")
 
         ok = store.record_alert_feedback(token, user_id, feedback_type)
-        alert = store.get_alert_by_token(token) if feedback_type in {"why", "never"} else None
+        alert = store.get_alert_by_token(token) if feedback_type in {"less", "why", "never"} else None
         if feedback_type == "why" and alert and chat_id:
             await send_telegram_text(chat_id, build_alert_explanation_text(alert.domain, alert.explanation))
+        if feedback_type == "less":
+            if alert:
+                store.suppress_alert(alert.domain, alert.telegram_chat_id, reason="user_less", days=90)
         if feedback_type == "never":
             if alert:
                 store.suppress_alert(alert.domain, alert.telegram_chat_id, reason="user_never", days=365)

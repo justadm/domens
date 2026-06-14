@@ -120,7 +120,7 @@ class DomainMonitoringService:
     def _is_alert_suppressed(self, fqdn: str, destination: str) -> bool:
         return any(
             self.store.should_suppress_alert(fqdn, destination, reason=reason)
-            for reason in ("same_domain", "user_never")
+            for reason in ("same_domain", "user_less", "user_never")
         )
 
     def _log_monitor_event(
