@@ -348,6 +348,51 @@ def test_watch_rules_text_includes_limits_usage_and_last_alert() -> None:
     assert "последний: пока нет" in text
 
 
+def test_watch_rules_text_and_keyboard_hide_deleted_rules() -> None:
+    rules = [
+        {
+            "id": "17313857-8a89-473c-9cc9-ad00de7c13b7",
+            "status": "deleted",
+            "query": "cloud ops",
+            "daily_alert_limit": 3,
+            "alerts_24h_sent": 0,
+            "last_alert_domain": None,
+        },
+        {
+            "id": "ce1425e4-2d00-4586-9e58-3a8204c83248",
+            "status": "active",
+            "query": "domain catcher",
+            "daily_alert_limit": 1,
+            "alerts_24h_sent": 1,
+            "last_alert_domain": "catcherlab.ru",
+        },
+    ]
+
+    text = tg._watch_rules_text(rules)
+    keyboard = tg._watch_rules_keyboard(rules)
+
+    assert "cloud ops" not in text
+    assert "domain catcher" in text
+    assert keyboard is not None
+    assert "17313857" not in str(keyboard)
+    assert "ce1425e4" in str(keyboard)
+
+
+def test_watch_rules_text_explains_when_only_deleted_rules_exist() -> None:
+    text = tg._watch_rules_text(
+        [
+            {
+                "id": "17313857-8a89-473c-9cc9-ad00de7c13b7",
+                "status": "deleted",
+                "query": "cloud ops",
+            }
+        ]
+    )
+
+    assert "Активных watch-правил нет" in text
+    assert "cloud ops" not in text
+
+
 def test_telegram_limits_explains_when_alerts_disabled(monkeypatch) -> None:
     sent: list[tuple[str, str]] = []
     events: list[str] = []

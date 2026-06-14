@@ -63,7 +63,15 @@ def _short_rule(rule_id: str) -> str:
     return rule_id.split("-", 1)[0]
 
 
+def _visible_watch_rules(rules: list[dict]) -> list[dict]:
+    return [item for item in rules if str(item.get("status") or "").lower() != "deleted"]
+
+
 def _watch_rules_text(rules: list[dict]) -> str:
+    rules = _visible_watch_rules(rules)
+    if not rules:
+        return "Активных watch-правил нет.\nДобавить: /watch add <query>"
+
     lines: list[str] = ["Ваши watch-правила:"]
     for index, item in enumerate(rules[:20], start=1):
         status = str(item.get("status") or "-")
@@ -82,7 +90,7 @@ def _watch_rules_text(rules: list[dict]) -> str:
 
 def _watch_rules_keyboard(rules: list[dict]) -> dict | None:
     keyboard: list[list[dict]] = []
-    for item in rules[:10]:
+    for item in _visible_watch_rules(rules)[:10]:
         rid = str(item["id"])
         status = str(item.get("status") or "active")
         action = "pause" if status == "active" else "resume"
