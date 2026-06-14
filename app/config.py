@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     monitor_alert_global_run_limit: int = 3
     monitor_watchlist_only: bool = True
     monitor_admin_fanout_enabled: bool = False
+    monitor_digest_enabled: bool = True
     monitor_event_logging_enabled: bool = True
     monitor_event_logging_detail: bool = False
 

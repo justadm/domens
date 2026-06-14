@@ -165,6 +165,7 @@ class DomainMonitoringService:
             started_at = datetime.now(timezone.utc).isoformat()
             watchlist_only = bool(settings.monitor_watchlist_only)
             admin_fanout_enabled = bool(settings.monitor_admin_fanout_enabled)
+            digest_enabled = bool(settings.monitor_digest_enabled)
             detail_logging = bool(settings.monitor_event_logging_detail)
             self._log_monitor_event(
                 "monitor_run_started",
@@ -178,6 +179,7 @@ class DomainMonitoringService:
                     "per_target_daily_limit": settings.monitor_alert_per_target_daily_limit,
                     "cooldown_minutes": settings.monitor_alert_cooldown_minutes,
                     "require_provider_check": settings.monitor_require_provider_check,
+                    "digest_enabled": digest_enabled,
                     "detail_logging": detail_logging,
                 },
             )
@@ -458,15 +460,18 @@ class DomainMonitoringService:
                         )
 
                         if channel_type == "telegram":
-                            async with digest_lock:
-                                digest_items.setdefault(channel_target, []).append(
-                                    {
-                                        "domain": fqdn,
-                                        "token": token,
-                                        "rule_id": rule_id,
-                                        "explanation": explanation,
-                                    }
-                                )
+                            if digest_enabled:
+                                async with digest_lock:
+                                    digest_items.setdefault(channel_target, []).append(
+                                        {
+                                            "domain": fqdn,
+                                            "token": token,
+                                            "rule_id": rule_id,
+                                            "explanation": explanation,
+                                        }
+                                    )
+                            else:
+                                await send_telegram_alert(channel_target, fqdn, token, explanation=explanation)
                         else:
                             await send_max_alert(channel_target, fqdn, token)
                         self.store.suppress_alert(fqdn, channel_target, reason="same_domain", days=30)
