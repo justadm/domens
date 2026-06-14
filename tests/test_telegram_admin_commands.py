@@ -309,6 +309,7 @@ def test_telegram_alerts_menu_button_opens_submenu(monkeypatch) -> None:
     assert keyboard is not None
     assert [[button["text"] for button in row] for row in keyboard["keyboard"]] == [
         ["✅ Включить", "⏸ Выключить", "📊 Лимиты"],
+        ["📜 История"],
         ["⬅️ Назад"],
     ]
     assert "command_alerts_menu" in events
@@ -567,6 +568,105 @@ def test_telegram_find_button_accepts_next_plain_text(monkeypatch) -> None:
     assert "aitools.ru" in texts[-1][1]
     assert ("command_domains_prompt", None) in events
     assert any(event == "domains_now_from_prompt" for event, _payload in events)
+
+
+def test_telegram_alert_history_button_shows_recent_alerts(monkeypatch) -> None:
+    sent: list[tuple[str, str]] = []
+    events: list[str] = []
+    captured: dict[str, object] = {}
+
+    async def _fake_send(chat_id: str, text: str) -> dict:
+        sent.append((chat_id, text))
+        return {"ok": True}
+
+    def _fake_history(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [
+                {
+                    "domain": "stackai.ru",
+                    "alert_type": "watch_rule_match:r1",
+                    "created_at": "2026-06-14T10:00:00+00:00",
+                    "explanation": {
+                        "score": 88.4,
+                        "status": "available",
+                        "tld": "ru",
+                        "matched_query": "stack ai",
+                        "risk": "provider_checked",
+                    },
+                    "latest_feedback": {"type": "more"},
+                    "feedback_counts": {"more": 1, "why": 1},
+                }
+            ],
+            "total": 1,
+            "limit": 5,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+        }
+
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+    monkeypatch.setattr(
+        tg.store,
+        "get_telegram_user",
+        lambda _uid: SimpleNamespace(
+            telegram_user_id="13903713",
+            telegram_chat_id="13903713",
+            username="just",
+            disclaimer_accepted_at="2026-06-12T10:00:00+00:00",
+        ),
+    )
+    monkeypatch.setattr(tg.store, "list_user_alerts_page", _fake_history)
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("📜 История")))
+
+    assert result["action"] == "alerts_history_sent"
+    assert captured == {"telegram_user_id": "13903713", "limit": 5, "offset": 0}
+    assert sent
+    assert "История алертов" in sent[0][1]
+    assert "1. stackai.ru" in sent[0][1]
+    assert "score: 88.4" in sent[0][1]
+    assert "статус: available" in sent[0][1]
+    assert "TLD: .ru" in sent[0][1]
+    assert "watch: stack ai" in sent[0][1]
+    assert "feedback: more" in sent[0][1]
+    assert "counts: more=1, why=1" in sent[0][1]
+    assert "command_alerts_history" in events
+
+
+def test_telegram_alert_history_explains_empty_state(monkeypatch) -> None:
+    sent: list[tuple[str, str]] = []
+
+    async def _fake_send(chat_id: str, text: str) -> dict:
+        sent.append((chat_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tg.store,
+        "get_telegram_user",
+        lambda _uid: SimpleNamespace(
+            telegram_user_id="13903713",
+            telegram_chat_id="13903713",
+            username="just",
+            disclaimer_accepted_at="2026-06-12T10:00:00+00:00",
+        ),
+    )
+    monkeypatch.setattr(
+        tg.store,
+        "list_user_alerts_page",
+        lambda **_kwargs: {"items": [], "total": 0, "limit": 5, "offset": 0, "next_offset": None},
+    )
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("/alerts history")))
+
+    assert result["action"] == "alerts_history_empty"
+    assert sent
+    assert "История алертов пока пустая" in sent[0][1]
 
 
 def test_admin_command_forbidden_for_regular_user(monkeypatch) -> None:

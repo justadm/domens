@@ -110,6 +110,35 @@ def _watch_rules_keyboard(rules: list[dict]) -> dict | None:
     return {"inline_keyboard": keyboard}
 
 
+def _feedback_counts_text(counts: dict | None) -> str:
+    if not counts:
+        return "-"
+    parts = [f"{key}={value}" for key, value in sorted(counts.items()) if int(value or 0) > 0]
+    return ", ".join(parts) if parts else "-"
+
+
+def _alert_history_text(items: list[dict]) -> str:
+    if not items:
+        return "История алертов пока пустая.\nКогда радар пришлёт домен, он появится здесь."
+
+    lines = ["История алертов:"]
+    for index, item in enumerate(items[:5], start=1):
+        domain = str(item.get("domain") or "-")
+        explanation = item.get("explanation") or {}
+        latest_feedback = item.get("latest_feedback") or {}
+        feedback_type = str(latest_feedback.get("type") or "-")
+        counts_text = _feedback_counts_text(item.get("feedback_counts") or {})
+        lines.append(f"{index}. {domain}")
+        if explanation:
+            why = build_alert_explanation_text(domain, explanation).splitlines()[1:]
+            lines.extend(f"   {line.replace('- ', '', 1)}" for line in why)
+        else:
+            lines.append(f"   type: {item.get('alert_type') or '-'}")
+        lines.append(f"   feedback: {feedback_type}")
+        lines.append(f"   counts: {counts_text}")
+    return "\n".join(lines)
+
+
 def _reply_keyboard(rows: list[list[str]]) -> dict:
     return {
         "keyboard": [[{"text": text} for text in row] for row in rows],
@@ -139,6 +168,7 @@ def _alerts_menu_keyboard() -> dict:
     return _reply_keyboard(
         [
             ["✅ Включить", "⏸ Выключить", "📊 Лимиты"],
+            ["📜 История"],
             ["⬅️ Назад"],
         ]
     )
@@ -168,6 +198,8 @@ def _menu_text_alias(text: str) -> str:
         "✅ включить": "/alerts on",
         "алерты off": "/alerts off",
         "⏸ выключить": "/alerts off",
+        "история": "/alerts history",
+        "📜 история": "/alerts history",
     }
     specials = {
         "watch": "__watch_menu",
@@ -335,6 +367,7 @@ async def _handle_commands(chat_id: str, user_id: str) -> dict:
         "/watch resume <id> - возобновить правило\n"
         "/watch delete <id> - удалить правило\n"
         "/alerts on|off - включить/выключить алерты\n"
+        "/alerts history - последние алерты и feedback\n"
         "/domains now <query> - разовый подбор кандидатов\n"
         "/menu - показать меню кнопок\n"
         "/ask <text> - вопрос в Copilot\n"
@@ -644,6 +677,18 @@ async def _handle_watch(chat_id: str, user_id: str, text: str) -> dict:
 
 async def _handle_alerts(chat_id: str, user_id: str, text: str) -> dict:
     parts = text.split()
+    if len(parts) >= 2 and parts[1].lower() in {"history", "recent"}:
+        page = store.list_user_alerts_page(telegram_user_id=user_id, limit=5, offset=0)
+        items = page.get("items") or []
+        await send_telegram_text(chat_id, _alert_history_text(items))
+        store.log_bot_event(
+            "command_alerts_history",
+            telegram_user_id=user_id,
+            telegram_chat_id=chat_id,
+            payload={"count": len(items), "total": page.get("total")},
+        )
+        return {"ok": True, "action": "alerts_history_sent" if items else "alerts_history_empty", "count": len(items)}
+
     if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
         await send_telegram_text(chat_id, "Формат: /alerts on|off")
         return {"ok": True, "action": "alerts_bad_format"}
