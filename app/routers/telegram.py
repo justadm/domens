@@ -461,6 +461,11 @@ async def _handle_preferences(chat_id: str, user_id: str) -> dict:
     return {"ok": True, "action": "preferences_sent"}
 
 
+async def _send_preferences_snapshot(chat_id: str, user_id: str) -> None:
+    preferences = store.list_user_preferences(user_id)
+    await send_telegram_message(chat_id, _preferences_text(preferences), reply_markup=_preferences_keyboard(preferences))
+
+
 async def _handle_watch_menu(chat_id: str, user_id: str) -> dict:
     await send_telegram_message(chat_id, "Радар доменов:", reply_markup=_watch_menu_keyboard())
     store.log_bot_event("command_watch_menu", telegram_user_id=user_id, telegram_chat_id=chat_id)
@@ -1139,10 +1144,10 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             if callback_query_id:
                 await answer_telegram_callback(callback_query_id, "Удалено" if ok else "Не найдено")
             if chat_id:
-                await send_telegram_text(
-                    chat_id,
-                    "Правило удалено. Обновить: /preferences" if ok else "Правило не найдено.",
-                )
+                if ok:
+                    await _send_preferences_snapshot(chat_id, user_id)
+                else:
+                    await send_telegram_text(chat_id, "Правило не найдено.")
             store.log_bot_event(
                 "preferences_watch_delete",
                 telegram_user_id=user_id,
@@ -1155,10 +1160,10 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             if callback_query_id:
                 await answer_telegram_callback(callback_query_id, "Снова показываю" if ok else "Не найдено")
             if chat_id:
-                await send_telegram_text(
-                    chat_id,
-                    "Домен снова будет показываться." if ok else "Скрытый домен не найден.",
-                )
+                if ok:
+                    await _send_preferences_snapshot(chat_id, user_id)
+                else:
+                    await send_telegram_text(chat_id, "Скрытый домен не найден.")
             store.log_bot_event(
                 "preferences_suppression_delete",
                 telegram_user_id=user_id,

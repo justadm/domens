@@ -328,20 +328,20 @@ def test_telegram_preferences_lists_rules_and_suppressions(monkeypatch) -> None:
 
 
 def test_telegram_preferences_callbacks_delete_items(monkeypatch) -> None:
-    sent: list[tuple[str, str]] = []
+    sent: list[tuple[str, str, dict | None]] = []
     answered: list[tuple[str, str | None]] = []
     watch_deleted: list[str] = []
     suppression_deleted: list[str] = []
 
-    async def _fake_send_text(chat_id: str, text: str) -> dict:
-        sent.append((chat_id, text))
+    async def _fake_send_message(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        sent.append((chat_id, text, reply_markup))
         return {"ok": True}
 
     async def _fake_answer(callback_query_id: str, text: str | None = None) -> dict:
         answered.append((callback_query_id, text))
         return {"ok": True}
 
-    monkeypatch.setattr(tg, "send_telegram_text", _fake_send_text)
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send_message)
     monkeypatch.setattr(tg, "answer_telegram_callback", _fake_answer)
     monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
     monkeypatch.setattr(tg.store, "log_bot_event", lambda *args, **kwargs: None)
@@ -355,6 +355,11 @@ def test_telegram_preferences_callbacks_delete_items(monkeypatch) -> None:
         "delete_alert_suppression",
         lambda user_id, suppression_id: suppression_deleted.append(f"{user_id}:{suppression_id}") or True,
     )
+    monkeypatch.setattr(
+        tg.store,
+        "list_user_preferences",
+        lambda _user_id: {"watch_rules": [], "suppressions": []},
+    )
 
     watch_result = asyncio.run(tg.process_telegram_update(_telegram_callback("pref:watch_delete:rule-123456")))
     suppression_result = asyncio.run(
@@ -366,7 +371,10 @@ def test_telegram_preferences_callbacks_delete_items(monkeypatch) -> None:
     assert watch_deleted == ["13903713:rule-123456:deleted"]
     assert suppression_deleted == ["13903713:sup-123456"]
     assert answered == [("cb1", "Удалено"), ("cb1", "Снова показываю")]
-    assert sent == [("13903713", "Правило удалено. Обновить: /preferences"), ("13903713", "Домен снова будет показываться.")]
+    assert [item[0] for item in sent] == ["13903713", "13903713"]
+    assert all("Мои предпочтения" in item[1] for item in sent)
+    assert all("Пока нет правил" in item[1] for item in sent)
+    assert all("Пока нет скрытых доменов" in item[1] for item in sent)
 
 
 def test_telegram_watch_menu_button_opens_submenu(monkeypatch) -> None:
