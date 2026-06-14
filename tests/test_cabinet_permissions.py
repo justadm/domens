@@ -263,6 +263,61 @@ def test_cabinet_alert_feedback_less_adds_medium_suppression(monkeypatch) -> Non
     assert suppressions == [("stackai.ru", "13903713", "user_less", 90)]
 
 
+def test_cabinet_alert_feedback_more_adds_quiet_watch_rule(monkeypatch) -> None:
+    client = TestClient(app)
+    recorded: dict[str, object] = {}
+    added: list[dict] = []
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "record_user_alert_feedback",
+        lambda alert_id, telegram_user_id, feedback_type, payload=None: recorded.update(
+            {
+                "alert_id": alert_id,
+                "telegram_user_id": telegram_user_id,
+                "feedback_type": feedback_type,
+                "payload": payload,
+            }
+        )
+        or {
+            "alert_id": alert_id,
+            "domain": "stackai.ru",
+            "channel_target": "13903713",
+            "explanation": {"matched_query": "ai tools", "tld": "ru"},
+            "feedback": {"type": feedback_type, "created_at": "2026-06-13T09:05:00+00:00"},
+        },
+    )
+    monkeypatch.setattr(cabinet_router.store, "list_watch_rules", lambda _user_id: [])
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "add_watch_rule",
+        lambda telegram_user_id, watch_query, **kwargs: added.append(
+            {"telegram_user_id": telegram_user_id, "watch_query": watch_query, **kwargs}
+        )
+        or "rule-1",
+    )
+    monkeypatch.setattr(cabinet_router.store, "log_bot_event", lambda *_args, **_kwargs: None)
+
+    response = client.post("/v1/cabinet/alerts/a1/feedback", json={"feedback_type": "more"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert recorded["feedback_type"] == "more"
+    assert added == [
+        {
+            "telegram_user_id": "13903713",
+            "watch_query": "ai tools",
+            "tlds": [".ru"],
+            "daily_alert_limit": 1,
+        }
+    ]
+
+
 def test_cabinet_domain_details(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(

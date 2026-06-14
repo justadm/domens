@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.schemas import ConfirmRegistrationRequest
+from app.services.alert_feedback import ensure_more_feedback_watch_rule
 from app.services.domain_checker import infer_status
 from app.services.domain_scoring import score_domain
 from app.services.notifications import (
@@ -1027,7 +1028,11 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             raise HTTPException(status_code=400, detail="invalid feedback type")
 
         ok = store.record_alert_feedback(token, user_id, feedback_type)
-        alert = store.get_alert_by_token(token) if feedback_type in {"less", "why", "never"} else None
+        alert = store.get_alert_by_token(token) if feedback_type in {"more", "less", "why", "never"} else None
+        more_watch_rule = None
+        if feedback_type == "more":
+            if alert:
+                more_watch_rule = ensure_more_feedback_watch_rule(store, user_id, alert.domain, alert.explanation)
         if feedback_type == "why" and alert and chat_id:
             await send_telegram_text(chat_id, build_alert_explanation_text(alert.domain, alert.explanation))
         if feedback_type == "less":
@@ -1040,10 +1045,18 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             "alert_feedback",
             telegram_user_id=user_id,
             telegram_chat_id=chat_id,
-            payload={"token": token, "feedback_type": feedback_type, "ok": ok},
+            payload={
+                "token": token,
+                "feedback_type": feedback_type,
+                "ok": ok,
+                "more_watch_rule": more_watch_rule,
+            },
         )
         if callback_query_id:
-            await answer_telegram_callback(callback_query_id, "Показываю почему" if feedback_type == "why" else "Принято")
+            callback_text = "Показываю почему" if feedback_type == "why" else "Принято"
+            if feedback_type == "more" and more_watch_rule:
+                callback_text = "Добавил в радар" if more_watch_rule.get("created") else "Уже в радаре"
+            await answer_telegram_callback(callback_query_id, callback_text)
         return {"ok": ok, "action": "feedback", "feedback_type": feedback_type}
 
     if callback_query_id:

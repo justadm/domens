@@ -89,6 +89,67 @@ def test_feedback_less_adds_medium_suppression(monkeypatch) -> None:
     assert suppressions == [("stackai.ru", "13903713", "user_less", 90)]
 
 
+def test_feedback_more_adds_quiet_watch_rule(monkeypatch) -> None:
+    added: list[dict] = []
+    answered: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "record_alert_feedback", lambda *args, **kwargs: True)
+    monkeypatch.setattr(tg.store, "list_watch_rules", lambda _user_id: [])
+    monkeypatch.setattr(
+        tg.store,
+        "get_alert_by_token",
+        lambda _token: type(
+            "Alert",
+            (),
+            {
+                "domain": "stackai.ru",
+                "telegram_chat_id": "13903713",
+                "explanation": {"matched_query": "ai tools", "tld": "ru"},
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        tg.store,
+        "add_watch_rule",
+        lambda telegram_user_id, watch_query, **kwargs: added.append(
+            {"telegram_user_id": telegram_user_id, "watch_query": watch_query, **kwargs}
+        )
+        or "rule-1",
+    )
+
+    async def fake_answer(callback_query_id: str, text: str | None = None) -> dict:
+        answered.append((callback_query_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "answer_telegram_callback", fake_answer)
+
+    result = asyncio.run(
+        tg.process_telegram_update(
+            {
+                "callback_query": {
+                    "id": "cb1",
+                    "data": "feedback:more:cfm_123",
+                    "from": {"id": 13903713},
+                    "message": {"chat": {"id": 13903713}},
+                }
+            }
+        )
+    )
+
+    assert result["action"] == "feedback"
+    assert added == [
+        {
+            "telegram_user_id": "13903713",
+            "watch_query": "ai tools",
+            "tlds": [".ru"],
+            "daily_alert_limit": 1,
+        }
+    ]
+    assert answered == [("cb1", "Добавил в радар")]
+
+
 def test_feedback_never_adds_long_suppression(monkeypatch) -> None:
     suppressions: list[tuple[str, str, str, int]] = []
 

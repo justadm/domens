@@ -907,6 +907,7 @@ class PostgresStore:
                 "alert_id": str(alert.id),
                 "domain": domain.fqdn,
                 "channel_target": str(alert.telegram_chat_id),
+                "explanation": alert.explanation or {},
                 "feedback": {
                     "type": feedback.feedback_type,
                     "created_at": feedback.created_at.isoformat(),

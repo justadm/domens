@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
 from app.schemas import ExecuteRegistrationResponse
+from app.services.alert_feedback import ensure_more_feedback_watch_rule
 from app.services.domain_checker import infer_status
 from app.services.domain_scoring import score_domain
 from app.services.timeweb_api import TimewebApiClient
@@ -458,6 +459,14 @@ async def cabinet_alert_feedback(
     if not result:
         raise HTTPException(status_code=404, detail="alert not found")
 
+    more_watch_rule = None
+    if feedback_type == "more":
+        more_watch_rule = ensure_more_feedback_watch_rule(
+            store,
+            auth_user.telegram_user_id,
+            str(result["domain"]),
+            result.get("explanation") if isinstance(result.get("explanation"), dict) else None,
+        )
     if feedback_type == "less":
         store.suppress_alert(result["domain"], result["channel_target"], reason="user_less", days=90)
     if feedback_type == "never":
@@ -466,7 +475,7 @@ async def cabinet_alert_feedback(
     store.log_bot_event(
         "cabinet_alert_feedback",
         telegram_user_id=auth_user.telegram_user_id,
-        payload={"alert_id": alert_id, "feedback_type": feedback_type},
+        payload={"alert_id": alert_id, "feedback_type": feedback_type, "more_watch_rule": more_watch_rule},
     )
     return CabinetAlertFeedbackResponse(
         ok=True,
