@@ -150,8 +150,9 @@ def _reply_keyboard(rows: list[list[str]]) -> dict:
 def _main_menu_keyboard() -> dict:
     return _reply_keyboard(
         [
-            ["👤 Профиль", "📊 Лимиты", "🎯 Радар"],
-            ["🔔 Алерты", "🔎 Найти", "❓ Помощь"],
+            ["👤 Профиль", "📊 Лимиты", "⚙️ Предпочтения"],
+            ["🎯 Радар", "🔔 Алерты", "🔎 Найти"],
+            ["❓ Помощь"],
         ]
     )
 
@@ -175,6 +176,55 @@ def _alerts_menu_keyboard() -> dict:
     )
 
 
+def _preferences_keyboard(preferences: dict) -> dict | None:
+    rows: list[list[dict]] = []
+    for item in (preferences.get("watch_rules") or [])[:8]:
+        rule_id = str(item.get("id") or "")
+        query = str(item.get("query") or "правило")
+        if rule_id:
+            rows.append([{"text": f"Удалить: {query[:24]}", "callback_data": f"pref:watch_delete:{rule_id}"}])
+    for item in (preferences.get("suppressions") or [])[:8]:
+        suppression_id = str(item.get("id") or "")
+        fqdn = str(item.get("fqdn") or "домен")
+        if suppression_id:
+            rows.append(
+                [{"text": f"Снова показывать: {fqdn[:24]}", "callback_data": f"pref:suppression_delete:{suppression_id}"}]
+            )
+    if not rows:
+        return None
+    return {"inline_keyboard": rows}
+
+
+def _preferences_text(preferences: dict) -> str:
+    lines = ["Мои предпочтения:"]
+    rules = preferences.get("watch_rules") or []
+    suppressions = preferences.get("suppressions") or []
+
+    lines.append("\nРадар:")
+    if rules:
+        for index, item in enumerate(rules[:10], start=1):
+            status = str(item.get("status") or "active")
+            query = str(item.get("query") or "-")
+            limit = int(item.get("daily_alert_limit") or 1)
+            tlds = ", ".join(str(tld) for tld in (item.get("tlds") or [])) or "all"
+            lines.append(f"{index}. {query} | {status} | {tlds} | {limit}/день")
+    else:
+        lines.append("Пока нет правил. Добавить: Радар -> Добавить")
+
+    lines.append("\nСкрытые домены:")
+    if suppressions:
+        reason_labels = {"user_less": "меньше таких", "user_never": "не повторять"}
+        for index, item in enumerate(suppressions[:10], start=1):
+            reason = reason_labels.get(str(item.get("reason") or ""), str(item.get("reason") or "-"))
+            expires = str(item.get("expires_at") or "")[:10] or "без срока"
+            lines.append(f"{index}. {item.get('fqdn')} | {reason} | до {expires}")
+    else:
+        lines.append("Пока нет скрытых доменов.")
+
+    lines.append("\nКнопками ниже можно удалить правило или снова показывать домен.")
+    return "\n".join(lines)
+
+
 def _menu_text_alias(text: str) -> str:
     value = text.strip()
     key = value.lower()
@@ -185,6 +235,9 @@ def _menu_text_alias(text: str) -> str:
         "📊 лимиты": "/limits",
         "помощь": "/help",
         "❓ помощь": "/help",
+        "предпочтения": "/preferences",
+        "настройки": "/preferences",
+        "⚙️ предпочтения": "/preferences",
         "назад": "/menu",
         "⬅️ назад": "/menu",
         "список watch": "/watch list",
@@ -341,6 +394,7 @@ async def _handle_help(chat_id: str, user_id: str) -> dict:
     help_text = (
         "Быстрые действия:\n"
         "- Профиль: статус, роль, алерты\n"
+        "- Предпочтения: правила и скрытые домены\n"
         "- Радар: правила мониторинга\n"
         "- Алерты: включить или выключить уведомления\n"
         "- Найти: разовый подбор доменов\n\n"
@@ -360,6 +414,7 @@ async def _handle_commands(chat_id: str, user_id: str) -> dict:
         "/commands - полный список команд\n"
         "/limits - лимиты алертов за 24ч\n"
         "/profile - профиль и статус\n"
+        "/preferences - мои правила и скрытые домены\n"
         "/watch add <query> - добавить правило\n"
         "/watch seed - добавить стартовый набор (30)\n"
         "/watch focus core|wide|status - профиль watch-правил\n"
@@ -389,6 +444,21 @@ async def _handle_commands(chat_id: str, user_id: str) -> dict:
     await send_telegram_message(chat_id, commands_text, reply_markup=_main_menu_keyboard())
     store.log_bot_event("command_commands", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "commands_sent"}
+
+
+async def _handle_preferences(chat_id: str, user_id: str) -> dict:
+    preferences = store.list_user_preferences(user_id)
+    await send_telegram_message(chat_id, _preferences_text(preferences), reply_markup=_preferences_keyboard(preferences))
+    store.log_bot_event(
+        "command_preferences",
+        telegram_user_id=user_id,
+        telegram_chat_id=chat_id,
+        payload={
+            "watch_rules_count": len(preferences.get("watch_rules") or []),
+            "suppressions_count": len(preferences.get("suppressions") or []),
+        },
+    )
+    return {"ok": True, "action": "preferences_sent"}
 
 
 async def _handle_watch_menu(chat_id: str, user_id: str) -> dict:
@@ -1059,6 +1129,45 @@ async def _handle_callback(callback_data: str, user_id: str, chat_id: str, callb
             await answer_telegram_callback(callback_query_id, callback_text)
         return {"ok": ok, "action": "feedback", "feedback_type": feedback_type}
 
+    if callback_data.startswith("pref:"):
+        parts = callback_data.split(":", 2)
+        if len(parts) != 3:
+            raise HTTPException(status_code=400, detail="invalid preferences callback_data")
+        _, action, item_id = parts
+        if action == "watch_delete":
+            ok = store.set_watch_rule_status(user_id, item_id, "deleted")
+            if callback_query_id:
+                await answer_telegram_callback(callback_query_id, "Удалено" if ok else "Не найдено")
+            if chat_id:
+                await send_telegram_text(
+                    chat_id,
+                    "Правило удалено. Обновить: /preferences" if ok else "Правило не найдено.",
+                )
+            store.log_bot_event(
+                "preferences_watch_delete",
+                telegram_user_id=user_id,
+                telegram_chat_id=chat_id,
+                payload={"rule_id": item_id, "ok": ok},
+            )
+            return {"ok": ok, "action": "preferences_watch_deleted" if ok else "preferences_watch_not_found"}
+        if action == "suppression_delete":
+            ok = store.delete_alert_suppression(user_id, item_id)
+            if callback_query_id:
+                await answer_telegram_callback(callback_query_id, "Снова показываю" if ok else "Не найдено")
+            if chat_id:
+                await send_telegram_text(
+                    chat_id,
+                    "Домен снова будет показываться." if ok else "Скрытый домен не найден.",
+                )
+            store.log_bot_event(
+                "preferences_suppression_delete",
+                telegram_user_id=user_id,
+                telegram_chat_id=chat_id,
+                payload={"suppression_id": item_id, "ok": ok},
+            )
+            return {"ok": ok, "action": "preferences_suppression_deleted" if ok else "preferences_suppression_not_found"}
+        raise HTTPException(status_code=400, detail="invalid preferences callback action")
+
     if callback_query_id:
         await answer_telegram_callback(callback_query_id)
 
@@ -1212,6 +1321,8 @@ async def process_telegram_update(payload: dict) -> dict:
 
     if text.startswith("/profile"):
         return await _handle_profile(chat_id, user_id)
+    if text.startswith("/preferences"):
+        return await _handle_preferences(chat_id, user_id)
     if text.startswith("/watch"):
         return await _handle_watch(chat_id, user_id, text)
     if text.startswith("/alerts"):

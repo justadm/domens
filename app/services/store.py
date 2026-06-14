@@ -1393,6 +1393,83 @@ class PostgresStore:
                 )
             session.commit()
 
+    def list_user_preferences(self, telegram_user_id: str) -> dict:
+        safe_uid = str(telegram_user_id).strip()
+        watch_rules = [item for item in self.list_watch_rules(safe_uid) if str(item.get("status") or "") != "deleted"]
+        now = datetime.now(timezone.utc)
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return {"watch_rules": [], "suppressions": []}
+
+            destinations = {str(user.telegram_chat_id)} if user.telegram_chat_id else set()
+            subscription_targets = session.execute(
+                select(UserSubscriptionModel.channel_target).where(UserSubscriptionModel.user_id == user.id)
+            ).scalars()
+            destinations.update(str(item) for item in subscription_targets if item)
+            if not destinations:
+                return {"watch_rules": watch_rules, "suppressions": []}
+
+            rows = list(
+                session.execute(
+                    select(AlertSuppressionModel)
+                    .where(AlertSuppressionModel.destination.in_(sorted(destinations)))
+                    .where(AlertSuppressionModel.reason.in_(["user_less", "user_never"]))
+                    .where(or_(AlertSuppressionModel.expires_at.is_(None), AlertSuppressionModel.expires_at > now))
+                    .order_by(desc(AlertSuppressionModel.created_at))
+                    .limit(20)
+                ).scalars()
+            )
+            return {
+                "watch_rules": watch_rules,
+                "suppressions": [
+                    {
+                        "id": str(row.id),
+                        "fqdn": row.fqdn,
+                        "reason": row.reason,
+                        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+                    }
+                    for row in rows
+                ],
+            }
+
+    def delete_alert_suppression(self, telegram_user_id: str, suppression_id: str) -> bool:
+        safe_uid = str(telegram_user_id).strip()
+        try:
+            safe_id = uuid.UUID(str(suppression_id))
+        except ValueError:
+            return False
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return False
+
+            destinations = {str(user.telegram_chat_id)} if user.telegram_chat_id else set()
+            subscription_targets = session.execute(
+                select(UserSubscriptionModel.channel_target).where(UserSubscriptionModel.user_id == user.id)
+            ).scalars()
+            destinations.update(str(item) for item in subscription_targets if item)
+            if not destinations:
+                return False
+
+            row = session.execute(
+                select(AlertSuppressionModel)
+                .where(AlertSuppressionModel.id == safe_id)
+                .where(AlertSuppressionModel.destination.in_(sorted(destinations)))
+                .where(AlertSuppressionModel.reason.in_(["user_less", "user_never"]))
+                .limit(1)
+            ).scalar_one_or_none()
+            if not row:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
     def record_alert_feedback(
         self,
         token: str,

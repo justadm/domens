@@ -19,6 +19,17 @@ def _telegram_message(text: str) -> dict:
     }
 
 
+def _telegram_callback(data: str) -> dict:
+    return {
+        "callback_query": {
+            "id": "cb1",
+            "data": data,
+            "from": {"id": 13903713, "username": "just"},
+            "message": {"chat": {"id": 13903713}},
+        }
+    }
+
+
 def test_telegram_help_replies_with_menu(monkeypatch) -> None:
     sent: list[tuple[str, str, dict | None]] = []
     events: list[str] = []
@@ -247,8 +258,9 @@ def test_telegram_menu_replies_with_icon_grid(monkeypatch) -> None:
     keyboard = sent[0][2]
     assert keyboard is not None
     assert [[button["text"] for button in row] for row in keyboard["keyboard"]] == [
-        ["👤 Профиль", "📊 Лимиты", "🎯 Радар"],
-        ["🔔 Алерты", "🔎 Найти", "❓ Помощь"],
+        ["👤 Профиль", "📊 Лимиты", "⚙️ Предпочтения"],
+        ["🎯 Радар", "🔔 Алерты", "🔎 Найти"],
+        ["❓ Помощь"],
     ]
     buttons = [button["text"] for row in keyboard["keyboard"] for button in row]
     assert "👤 Профиль" in buttons
@@ -260,6 +272,101 @@ def test_telegram_menu_replies_with_icon_grid(monkeypatch) -> None:
     assert "/profile" not in buttons
     assert "/watch seed" not in buttons
     assert "command_menu" in events
+
+
+def test_telegram_preferences_lists_rules_and_suppressions(monkeypatch) -> None:
+    sent: list[tuple[str, str, dict | None]] = []
+    events: list[str] = []
+
+    async def _fake_send(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        sent.append((chat_id, text, reply_markup))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+    monkeypatch.setattr(tg, "_is_ready", lambda _uid: (True, None))
+    monkeypatch.setattr(
+        tg.store,
+        "list_user_preferences",
+        lambda _uid: {
+            "watch_rules": [
+                {
+                    "id": "rule-123456",
+                    "query": "ai tools",
+                    "status": "active",
+                    "daily_alert_limit": 1,
+                    "tlds": [".ru"],
+                }
+            ],
+            "suppressions": [
+                {
+                    "id": "sup-123456",
+                    "fqdn": "stackai.ru",
+                    "reason": "user_less",
+                    "expires_at": "2026-09-12T10:00:00+00:00",
+                }
+            ],
+        },
+    )
+
+    result = asyncio.run(tg.process_telegram_update(_telegram_message("/preferences")))
+
+    assert result["action"] == "preferences_sent"
+    assert sent
+    assert "Мои предпочтения" in sent[0][1]
+    assert "Радар:" in sent[0][1]
+    assert "ai tools" in sent[0][1]
+    assert "Скрытые домены:" in sent[0][1]
+    assert "stackai.ru" in sent[0][1]
+    keyboard = sent[0][2]
+    assert keyboard is not None
+    callback_data = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
+    assert "pref:watch_delete:rule-123456" in callback_data
+    assert "pref:suppression_delete:sup-123456" in callback_data
+    assert "command_preferences" in events
+
+
+def test_telegram_preferences_callbacks_delete_items(monkeypatch) -> None:
+    sent: list[tuple[str, str]] = []
+    answered: list[tuple[str, str | None]] = []
+    watch_deleted: list[str] = []
+    suppression_deleted: list[str] = []
+
+    async def _fake_send_text(chat_id: str, text: str) -> dict:
+        sent.append((chat_id, text))
+        return {"ok": True}
+
+    async def _fake_answer(callback_query_id: str, text: str | None = None) -> dict:
+        answered.append((callback_query_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send_text)
+    monkeypatch.setattr(tg, "answer_telegram_callback", _fake_answer)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tg.store,
+        "set_watch_rule_status",
+        lambda user_id, rule_id, status: watch_deleted.append(f"{user_id}:{rule_id}:{status}") or True,
+    )
+    monkeypatch.setattr(
+        tg.store,
+        "delete_alert_suppression",
+        lambda user_id, suppression_id: suppression_deleted.append(f"{user_id}:{suppression_id}") or True,
+    )
+
+    watch_result = asyncio.run(tg.process_telegram_update(_telegram_callback("pref:watch_delete:rule-123456")))
+    suppression_result = asyncio.run(
+        tg.process_telegram_update(_telegram_callback("pref:suppression_delete:sup-123456"))
+    )
+
+    assert watch_result["action"] == "preferences_watch_deleted"
+    assert suppression_result["action"] == "preferences_suppression_deleted"
+    assert watch_deleted == ["13903713:rule-123456:deleted"]
+    assert suppression_deleted == ["13903713:sup-123456"]
+    assert answered == [("cb1", "Удалено"), ("cb1", "Снова показываю")]
+    assert sent == [("13903713", "Правило удалено. Обновить: /preferences"), ("13903713", "Домен снова будет показываться.")]
 
 
 def test_telegram_watch_menu_button_opens_submenu(monkeypatch) -> None:
