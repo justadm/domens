@@ -11,6 +11,7 @@
 - `MONITOR_WATCHLIST_ONLY=true` for the first canary
 - `MONITOR_ADMIN_FANOUT_ENABLED=false` for the first canary
 - `MONITOR_EVENT_LOGGING_ENABLED=true` while canary is under observation
+- `MONITOR_EVENT_LOGGING_DETAIL=false` by default; enable only for short diagnostics
 - `REGISTRATION_ENABLED=false` until manual approval
 
 ## Canary setup
@@ -23,6 +24,7 @@
    - `MONITOR_WATCHLIST_ONLY=true`;
    - `MONITOR_ADMIN_FANOUT_ENABLED=false`;
    - `MONITOR_EVENT_LOGGING_ENABLED=true`;
+   - `MONITOR_EVENT_LOGGING_DETAIL=false`;
    - `MONITOR_ALERT_GLOBAL_RUN_LIMIT=1`;
    - `MONITOR_ALERT_PER_TARGET_RUN_LIMIT=1`;
    - `MONITOR_ALERT_PER_TARGET_DAILY_LIMIT=1`;

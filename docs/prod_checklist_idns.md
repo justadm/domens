@@ -49,6 +49,7 @@ Required values in `/opt/domens/.env`:
   - `MONITOR_WATCHLIST_ONLY=true`
   - `MONITOR_ADMIN_FANOUT_ENABLED=false`
   - `MONITOR_EVENT_LOGGING_ENABLED=true`
+  - `MONITOR_EVENT_LOGGING_DETAIL=false`
 - `TELEGRAM_ADMIN_USER_IDS=13903713`
 
 ## 4) First run (nginx mode on msk)

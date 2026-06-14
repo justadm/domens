@@ -1891,11 +1891,53 @@ class PostgresStore:
             if not user:
                 return []
 
-            rows = session.execute(
-                select(UserWatchRuleModel)
-                .where(UserWatchRuleModel.user_id == user.id)
-                .order_by(desc(UserWatchRuleModel.created_at))
+            rows = list(
+                session.execute(
+                    select(UserWatchRuleModel)
+                    .where(UserWatchRuleModel.user_id == user.id)
+                    .order_by(desc(UserWatchRuleModel.created_at))
+                ).scalars()
+            )
+            if not rows:
+                return []
+
+            rule_alert_types = {str(r.id): f"watch_rule_match:{r.id}" for r in rows}
+            destinations = {str(user.telegram_chat_id)} if user.telegram_chat_id else set()
+            subscription_targets = session.execute(
+                select(UserSubscriptionModel.channel_target).where(UserSubscriptionModel.user_id == user.id)
             ).scalars()
+            destinations.update(str(item) for item in subscription_targets if item)
+
+            count_by_type: dict[str, int] = {}
+            latest_by_type: dict[str, dict] = {}
+            alert_types = list(rule_alert_types.values())
+            if destinations:
+                threshold = datetime.now(timezone.utc) - timedelta(hours=24)
+                count_rows = session.execute(
+                    select(AlertModel.alert_type, func.count(AlertModel.id))
+                    .where(AlertModel.alert_type.in_(alert_types))
+                    .where(AlertModel.telegram_chat_id.in_(sorted(destinations)))
+                    .where(AlertModel.created_at >= threshold)
+                    .group_by(AlertModel.alert_type)
+                ).all()
+                count_by_type = {str(alert_type): int(count) for alert_type, count in count_rows}
+
+                latest_rows = session.execute(
+                    select(AlertModel, DomainModel)
+                    .join(DomainModel, DomainModel.id == AlertModel.domain_id)
+                    .where(AlertModel.alert_type.in_(alert_types))
+                    .where(AlertModel.telegram_chat_id.in_(sorted(destinations)))
+                    .order_by(desc(AlertModel.created_at))
+                ).all()
+                for alert, domain in latest_rows:
+                    alert_type = str(alert.alert_type)
+                    if alert_type in latest_by_type:
+                        continue
+                    latest_by_type[alert_type] = {
+                        "domain": domain.fqdn,
+                        "created_at": alert.created_at.isoformat(),
+                    }
+
             return [
                 {
                     "id": str(r.id),
@@ -1906,6 +1948,9 @@ class PostgresStore:
                     "max_price_usd": float(r.max_price_usd) if r.max_price_usd is not None else None,
                     "max_length": int(r.max_length) if r.max_length is not None else None,
                     "daily_alert_limit": int(r.daily_alert_limit or 3),
+                    "alerts_24h_sent": count_by_type.get(rule_alert_types[str(r.id)], 0),
+                    "last_alert_domain": latest_by_type.get(rule_alert_types[str(r.id)], {}).get("domain"),
+                    "last_alert_at": latest_by_type.get(rule_alert_types[str(r.id)], {}).get("created_at"),
                 }
                 for r in rows
             ]

@@ -164,6 +164,7 @@ class DomainMonitoringService:
             started_at = datetime.now(timezone.utc).isoformat()
             watchlist_only = bool(settings.monitor_watchlist_only)
             admin_fanout_enabled = bool(settings.monitor_admin_fanout_enabled)
+            detail_logging = bool(settings.monitor_event_logging_detail)
             self._log_monitor_event(
                 "monitor_run_started",
                 {
@@ -176,6 +177,7 @@ class DomainMonitoringService:
                     "per_target_daily_limit": settings.monitor_alert_per_target_daily_limit,
                     "cooldown_minutes": settings.monitor_alert_cooldown_minutes,
                     "require_provider_check": settings.monitor_require_provider_check,
+                    "detail_logging": detail_logging,
                 },
             )
             global_candidates = [] if watchlist_only else self._build_candidates()
@@ -218,6 +220,8 @@ class DomainMonitoringService:
             )
             interesting_statuses = self._alert_statuses()
             alerts_sent = 0
+            status_counts: dict[str, int] = {}
+            skip_reasons: dict[str, int] = {}
             global_run_limit = max(1, int(settings.monitor_alert_global_run_limit))
             per_target_sent: dict[tuple[str, str], int] = {}
             per_target_daily_sent: dict[tuple[str, str], int] = {}
@@ -233,10 +237,12 @@ class DomainMonitoringService:
             sem = asyncio.Semaphore(12)
 
             def log_skip(fqdn: str, reason: str, payload: dict | None = None) -> None:
-                self._log_monitor_event(
-                    "monitor_alert_skipped",
-                    {"run_id": run_id, "fqdn": fqdn, "reason": reason, **(payload or {})},
-                )
+                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                if detail_logging:
+                    self._log_monitor_event(
+                        "monitor_alert_skipped",
+                        {"run_id": run_id, "fqdn": fqdn, "reason": reason, **(payload or {})},
+                    )
 
             async def process_domain(fqdn: str) -> None:
                 nonlocal alerts_sent
@@ -257,17 +263,19 @@ class DomainMonitoringService:
                             source="monitor",
                             provider=provider,
                         )
-                        self._log_monitor_event(
-                            "monitor_candidate_checked",
-                            {
-                                "run_id": run_id,
-                                "fqdn": fqdn,
-                                "status": status,
-                                "score": round(float(score), 2),
-                                "provider": provider,
-                                "drop_time_estimated_at": eta.isoformat() if eta else None,
-                            },
-                        )
+                        status_counts[str(status)] = status_counts.get(str(status), 0) + 1
+                        if detail_logging:
+                            self._log_monitor_event(
+                                "monitor_candidate_checked",
+                                {
+                                    "run_id": run_id,
+                                    "fqdn": fqdn,
+                                    "status": status,
+                                    "score": round(float(score), 2),
+                                    "provider": provider,
+                                    "drop_time_estimated_at": eta.isoformat() if eta else None,
+                                },
+                            )
                     except Exception as exc:
                         self._log_monitor_event(
                             "monitor_candidate_error",
@@ -547,6 +555,8 @@ class DomainMonitoringService:
                         "error": str(exc),
                         "checked": len(candidates),
                         "alerts_sent": alerts_sent,
+                        "status_counts": dict(sorted(status_counts.items())),
+                        "skip_reasons": dict(sorted(skip_reasons.items())),
                         "finished_at": datetime.now(timezone.utc).isoformat(),
                     },
                 )
@@ -555,6 +565,8 @@ class DomainMonitoringService:
             result = {
                 "checked": len(candidates),
                 "alerts_sent": alerts_sent,
+                "status_counts": dict(sorted(status_counts.items())),
+                "skip_reasons": dict(sorted(skip_reasons.items())),
                 "finished_at": datetime.now(timezone.utc).isoformat(),
             }
             self._log_monitor_event("monitor_run_finished", {"run_id": run_id, **result})

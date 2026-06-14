@@ -65,8 +65,18 @@ def _short_rule(rule_id: str) -> str:
 
 def _watch_rules_text(rules: list[dict]) -> str:
     lines: list[str] = ["Ваши watch-правила:"]
-    for item in rules[:20]:
-        lines.append(f"- [{item['status']}] {item['query']} (id: {_short_rule(item['id'])})")
+    for index, item in enumerate(rules[:20], start=1):
+        status = str(item.get("status") or "-")
+        query = str(item.get("query") or "-")
+        rule_id = _short_rule(str(item.get("id") or ""))
+        daily_limit = int(item.get("daily_alert_limit") or 3)
+        sent_24h = int(item.get("alerts_24h_sent") or 0)
+        last_domain = str(item.get("last_alert_domain") or "").strip()
+        last_text = last_domain if last_domain else "пока нет"
+        lines.append(
+            f"{index}. {status} {query} (id: {rule_id})\n"
+            f"   лимит: {daily_limit}/день, за 24ч: {sent_24h}, последний: {last_text}"
+        )
     return "\n".join(lines)
 
 

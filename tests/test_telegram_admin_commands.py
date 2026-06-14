@@ -314,6 +314,40 @@ def test_telegram_alerts_menu_button_opens_submenu(monkeypatch) -> None:
     assert "command_alerts_menu" in events
 
 
+def test_watch_rules_text_includes_limits_usage_and_last_alert() -> None:
+    text = tg._watch_rules_text(
+        [
+            {
+                "id": "ce1425e4-2d00-4586-9e58-3a8204c83248",
+                "status": "active",
+                "query": "domain catcher",
+                "daily_alert_limit": 1,
+                "alerts_24h_sent": 1,
+                "last_alert_domain": "catcherlab.ru",
+                "last_alert_at": "2026-06-13T17:47:10+00:00",
+            },
+            {
+                "id": "704cdd88-5a9e-4fb7-b54a-ac93610cb78f",
+                "status": "paused",
+                "query": "domain radar",
+                "daily_alert_limit": 1,
+                "alerts_24h_sent": 0,
+                "last_alert_domain": None,
+                "last_alert_at": None,
+            },
+        ]
+    )
+
+    assert "Ваши watch-правила" in text
+    assert "1. active domain catcher" in text
+    assert "id: ce1425e4" in text
+    assert "лимит: 1/день" in text
+    assert "за 24ч: 1" in text
+    assert "последний: catcherlab.ru" in text
+    assert "2. paused domain radar" in text
+    assert "последний: пока нет" in text
+
+
 def test_telegram_limits_explains_when_alerts_disabled(monkeypatch) -> None:
     sent: list[tuple[str, str]] = []
     events: list[str] = []
