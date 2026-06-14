@@ -513,6 +513,62 @@ def test_telegram_watch_add_button_accepts_next_plain_text(monkeypatch) -> None:
     assert "watch_add_from_prompt" in events
 
 
+def test_telegram_find_button_accepts_next_plain_text(monkeypatch) -> None:
+    messages: list[tuple[str, str, dict | None]] = []
+    texts: list[tuple[str, str]] = []
+    events: list[tuple[str, dict | None]] = []
+
+    if hasattr(tg, "_pending_domain_search"):
+        tg._pending_domain_search.clear()
+
+    async def _fake_send_message(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        messages.append((chat_id, text, reply_markup))
+        return {"ok": True}
+
+    async def _fake_send_text(chat_id: str, text: str) -> dict:
+        texts.append((chat_id, text))
+        return {"ok": True}
+
+    async def _fake_status(domain: str, **_kwargs):
+        return ("available" if domain.endswith(".ru") else "registered", None)
+
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send_message)
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send_text)
+    monkeypatch.setattr(tg, "infer_status", _fake_status)
+    monkeypatch.setattr(tg, "score_domain", lambda _domain: 70)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tg.store,
+        "log_bot_event",
+        lambda event, **kwargs: events.append((event, kwargs.get("payload"))),
+    )
+    monkeypatch.setattr(
+        tg.store,
+        "get_telegram_user",
+        lambda _uid: SimpleNamespace(
+            telegram_user_id="13903713",
+            telegram_chat_id="13903713",
+            username="just",
+            disclaimer_accepted_at="2026-06-12T10:00:00+00:00",
+        ),
+    )
+    monkeypatch.setattr(tg.settings, "monitor_tlds", ".ru,.io", raising=False)
+
+    prompt_result = asyncio.run(tg.process_telegram_update(_telegram_message("🔎 Найти")))
+    search_result = asyncio.run(tg.process_telegram_update(_telegram_message("ai tools")))
+
+    assert prompt_result["action"] == "domains_prompt_sent"
+    assert messages
+    assert "Напишите тему" in messages[0][1]
+    assert "/domains now" not in messages[0][1]
+    assert search_result["action"] == "domains_now_from_prompt_done"
+    assert texts
+    assert "Подбор по запросу:" in texts[-1][1]
+    assert "aitools.ru" in texts[-1][1]
+    assert ("command_domains_prompt", None) in events
+    assert any(event == "domains_now_from_prompt" for event, _payload in events)
+
+
 def test_admin_command_forbidden_for_regular_user(monkeypatch) -> None:
     sent: list[str] = []
 

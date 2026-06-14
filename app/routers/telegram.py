@@ -26,6 +26,7 @@ timeweb_client = TimewebApiClient(
 )
 
 _pending_watch_add: set[str] = set()
+_pending_domain_search: set[str] = set()
 
 START_DISCLAIMER_TEXT = (
     "Перед началом:\n"
@@ -405,9 +406,10 @@ async def _handle_pending_watch_add(chat_id: str, user_id: str, text: str) -> di
 
 
 async def _handle_domains_prompt(chat_id: str, user_id: str) -> dict:
+    _pending_domain_search.add(user_id)
     await send_telegram_message(
         chat_id,
-        "Напишите команду:\n/domains now <тема>\n\nПример:\n/domains now ai tools",
+        "Напишите тему для подбора доменов одним сообщением.\n\nПример: ai tools\nОтмена: /menu",
         reply_markup=_main_menu_keyboard(),
     )
     store.log_bot_event("command_domains_prompt", telegram_user_id=user_id, telegram_chat_id=chat_id)
@@ -744,6 +746,23 @@ async def _handle_domains_now(chat_id: str, user_id: str, text: str) -> dict:
         payload={"query": query, "count": len(top)},
     )
     return {"ok": True, "action": "domains_now_done", "count": len(top)}
+
+
+async def _handle_pending_domain_search(chat_id: str, user_id: str, text: str) -> dict:
+    query = text.strip()
+    if not query:
+        await send_telegram_text(chat_id, "Напишите тему текстом или отмените: /menu")
+        return {"ok": True, "action": "domains_prompt_empty"}
+
+    _pending_domain_search.discard(user_id)
+    result = await _handle_domains_now(chat_id, user_id, f"/domains now {query}")
+    store.log_bot_event(
+        "domains_now_from_prompt",
+        telegram_user_id=user_id,
+        telegram_chat_id=chat_id,
+        payload={"query": query, "count": result.get("count")},
+    )
+    return {**result, "action": "domains_now_from_prompt_done"}
 
 
 async def _handle_admin(chat_id: str, user_id: str, text: str) -> dict:
@@ -1088,8 +1107,12 @@ async def process_telegram_update(payload: dict) -> dict:
     store.upsert_telegram_user(user_id, chat_id, username, first_name, locale)
     store.log_bot_event("incoming_message", telegram_user_id=user_id, telegram_chat_id=chat_id, payload={"text": text})
 
-    if text != "__watch_add_prompt" and (text.startswith("/") or text.startswith("__")):
+    if (
+        text not in {"__watch_add_prompt", "__domains_prompt"}
+        and (text.startswith("/") or text.startswith("__"))
+    ):
         _pending_watch_add.discard(user_id)
+        _pending_domain_search.discard(user_id)
 
     if text == "__watch_menu":
         return await _handle_watch_menu(chat_id, user_id)
@@ -1120,6 +1143,8 @@ async def process_telegram_update(payload: dict) -> dict:
 
     if user_id in _pending_watch_add and not text.startswith("/"):
         return await _handle_pending_watch_add(chat_id, user_id, text)
+    if user_id in _pending_domain_search and not text.startswith("/"):
+        return await _handle_pending_domain_search(chat_id, user_id, text)
 
     if text.startswith("/profile"):
         return await _handle_profile(chat_id, user_id)
