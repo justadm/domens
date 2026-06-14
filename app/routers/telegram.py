@@ -25,6 +25,8 @@ timeweb_client = TimewebApiClient(
     api_token=settings.timeweb_api_token,
 )
 
+_pending_watch_add: set[str] = set()
+
 START_DISCLAIMER_TEXT = (
     "Перед началом:\n"
     "- сервис не гарантирует итоговую доступность домена;\n"
@@ -366,13 +368,40 @@ async def _handle_alerts_menu(chat_id: str, user_id: str) -> dict:
 
 
 async def _handle_watch_add_prompt(chat_id: str, user_id: str) -> dict:
+    _pending_watch_add.add(user_id)
     await send_telegram_message(
         chat_id,
-        "Напишите команду:\n/watch add <тема>\n\nПример:\n/watch add ai crm",
+        "Напишите тему для радара одним сообщением.\n\nПример: ai crm\nОтмена: /menu",
         reply_markup=_watch_menu_keyboard(),
     )
     store.log_bot_event("command_watch_add_prompt", telegram_user_id=user_id, telegram_chat_id=chat_id)
     return {"ok": True, "action": "watch_add_prompt_sent"}
+
+
+async def _handle_pending_watch_add(chat_id: str, user_id: str, text: str) -> dict:
+    query = text.strip()
+    if not query:
+        await send_telegram_text(chat_id, "Напишите тему текстом или отмените: /menu")
+        return {"ok": True, "action": "watch_add_prompt_empty"}
+
+    _pending_watch_add.discard(user_id)
+    rule_id = store.add_watch_rule(user_id, watch_query=query)
+    if not rule_id:
+        await send_telegram_text(chat_id, "Сначала выполните /start")
+        return {"ok": True, "action": "watch_add_no_user"}
+
+    await send_telegram_text(
+        chat_id,
+        f"Правило добавлено: {_short_rule(rule_id)} ({query})\n"
+        f"Посмотреть: /watch list",
+    )
+    store.log_bot_event(
+        "watch_add_from_prompt",
+        telegram_user_id=user_id,
+        telegram_chat_id=chat_id,
+        payload={"rule_id": rule_id, "query": query},
+    )
+    return {"ok": True, "action": "watch_added_from_prompt", "rule_id": rule_id}
 
 
 async def _handle_domains_prompt(chat_id: str, user_id: str) -> dict:
@@ -1059,6 +1088,9 @@ async def process_telegram_update(payload: dict) -> dict:
     store.upsert_telegram_user(user_id, chat_id, username, first_name, locale)
     store.log_bot_event("incoming_message", telegram_user_id=user_id, telegram_chat_id=chat_id, payload={"text": text})
 
+    if text != "__watch_add_prompt" and (text.startswith("/") or text.startswith("__")):
+        _pending_watch_add.discard(user_id)
+
     if text == "__watch_menu":
         return await _handle_watch_menu(chat_id, user_id)
     if text == "__alerts_menu":
@@ -1085,6 +1117,9 @@ async def process_telegram_update(payload: dict) -> dict:
     if not ready:
         await send_telegram_text(chat_id, reason or "Сначала выполните /start")
         return {"ok": True, "action": "user_not_ready"}
+
+    if user_id in _pending_watch_add and not text.startswith("/"):
+        return await _handle_pending_watch_add(chat_id, user_id, text)
 
     if text.startswith("/profile"):
         return await _handle_profile(chat_id, user_id)

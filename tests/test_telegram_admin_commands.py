@@ -460,6 +460,59 @@ def test_telegram_human_profile_button_dispatches_profile(monkeypatch) -> None:
     assert "command_profile" in events
 
 
+def test_telegram_watch_add_button_accepts_next_plain_text(monkeypatch) -> None:
+    messages: list[tuple[str, str, dict | None]] = []
+    texts: list[tuple[str, str]] = []
+    events: list[str] = []
+    added: list[tuple[str, str]] = []
+
+    if hasattr(tg, "_pending_watch_add"):
+        tg._pending_watch_add.clear()
+
+    async def _fake_send_message(chat_id: str, text: str, reply_markup: dict | None = None) -> dict:
+        messages.append((chat_id, text, reply_markup))
+        return {"ok": True}
+
+    async def _fake_send_text(chat_id: str, text: str) -> dict:
+        texts.append((chat_id, text))
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "send_telegram_message", _fake_send_message)
+    monkeypatch.setattr(tg, "send_telegram_text", _fake_send_text)
+    monkeypatch.setattr(tg.store, "upsert_telegram_user", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tg.store, "log_bot_event", lambda event, **_kwargs: events.append(event))
+    monkeypatch.setattr(
+        tg.store,
+        "get_telegram_user",
+        lambda _uid: SimpleNamespace(
+            telegram_user_id="13903713",
+            telegram_chat_id="13903713",
+            username="just",
+            disclaimer_accepted_at="2026-06-12T10:00:00+00:00",
+        ),
+    )
+
+    def _add_rule(user_id: str, watch_query: str, **_kwargs) -> str:
+        added.append((user_id, watch_query))
+        return "rule-1"
+
+    monkeypatch.setattr(tg.store, "add_watch_rule", _add_rule)
+
+    prompt_result = asyncio.run(tg.process_telegram_update(_telegram_message("➕ Добавить")))
+    add_result = asyncio.run(tg.process_telegram_update(_telegram_message("ai crm")))
+
+    assert prompt_result["action"] == "watch_add_prompt_sent"
+    assert messages
+    assert "Напишите тему" in messages[0][1]
+    assert "/watch add" not in messages[0][1]
+    assert add_result["action"] == "watch_added_from_prompt"
+    assert added == [("13903713", "ai crm")]
+    assert texts
+    assert "Правило добавлено" in texts[-1][1]
+    assert "command_watch_add_prompt" in events
+    assert "watch_add_from_prompt" in events
+
+
 def test_admin_command_forbidden_for_regular_user(monkeypatch) -> None:
     sent: list[str] = []
 
