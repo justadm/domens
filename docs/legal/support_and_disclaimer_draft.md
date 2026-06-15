@@ -10,13 +10,15 @@ Production contact values are not finalized.
 
 Draft support channels:
 
-- Telegram support: TODO
-- Email: TODO
-- Incident contact: TODO
+- Telegram support: `<support bot or handle>`
+- Email: `<support email>`
+- Incident contact: `<incident contact>`
 
 ## Product Disclaimer
 
 Domens Radar is a domain discovery and alerting tool. It does not guarantee that a suggested domain is legally safe, commercially suitable, trademark-free, or available at the moment the user acts.
+
+Searches, watch rules, and feedback are user account data. Public launch wording must clearly state that the operator will not use this data to preemptively register, reserve, sell, or prioritize domains against the user.
 
 ## Registration Disclaimer
 
@@ -30,6 +32,7 @@ Scores and explanations are ranking signals, not legal or business advice. The u
 
 - domain availability with the registrar;
 - trademark conflicts;
+- UDRP or other dispute risks;
 - spelling and brand risks;
 - TLD rules and restrictions;
 - final price and renewal terms.
@@ -43,4 +46,6 @@ During closed pilot, users should expect conservative alert limits, manual revie
 - Fill production support contacts.
 - Decide support SLA.
 - Add escalation path for registration incidents.
+- Add public no-front-running wording.
+- Add data deletion request path.
 - Add final wording to Telegram disclaimer and web legal pages.

@@ -25,6 +25,12 @@ Domens Radar is a Telegram-first domain monitoring service. The service helps us
 - Improve alert quality during the closed pilot.
 - Respond to support requests.
 
+## Search, Watchlist, And Front-Running
+
+Domain searches, watch rules, feedback, and alert history are product data tied to the user's account. The service should use this data only to operate the user's radar, improve alert quality, prevent repeats, and complete explicit user actions.
+
+Before public launch, add final public wording that the operator will not use user search or watchlist data to preemptively register, reserve, sell, or prioritize domains against the user.
+
 ## Registration Safety
 
 Registration is disabled by default unless explicitly enabled by operators. Availability checks can be stale or inconclusive, so the service must not present a DNS zone reserve as a completed domain registration.
@@ -37,6 +43,14 @@ Operational data is stored in PostgreSQL. Retention periods must be finalized be
 - alert history and feedback: 12 months;
 - support communications: 24 months;
 - technical error logs: 90 days.
+
+## Data Deletion Path
+
+Before public launch, provide a clear user request path for deleting:
+
+- watch rules and hidden-domain preferences;
+- Telegram account link and bot account state where retention is not legally required;
+- alert, query, and feedback history where retention is not needed for security, abuse prevention, accounting, support, or dispute handling.
 
 ## User Requests
 
@@ -56,6 +70,8 @@ The service may interact with:
 - registrar/provider APIs for availability checks and registration operations;
 - hosting, database, and monitoring infrastructure.
 
+Provider requests should be minimized to what is needed for availability checks, registration operations, and service reliability.
+
 Finalize the exact list of processors and provider links before public launch.
 
 ## Required Before Public Launch
@@ -64,5 +80,7 @@ Finalize the exact list of processors and provider links before public launch.
 - Add support email or support bot.
 - Add final retention periods.
 - Add processor/provider list.
+- Add public no-front-running wording.
+- Add final data deletion process.
 - Add personal data processing basis and jurisdiction-specific language.
 - Complete legal review.

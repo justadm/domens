@@ -25,6 +25,10 @@ The user should independently verify domain name suitability, trademark risks, s
 
 Domain availability can change quickly. Provider responses can be delayed, stale, incomplete, or unavailable. A domain suggestion or alert is not a guarantee that the domain can be registered.
 
+## Search And Watchlist Data
+
+The service should not use a user's search, watchlist, feedback, or alert data to preemptively register, reserve, sell, or prioritize domains against that user. Final public wording must be aligned with the privacy policy before public launch.
+
 ## Registration Actions
 
 Registration must be explicit. The service should create a registration order only after user confirmation. If registration is disabled by configuration, execution is blocked.
@@ -54,5 +58,6 @@ The service provides suggestions and operational tooling. Final legal, trademark
 - Add accepted payment terms if paid flows are enabled.
 - Add support and dispute process.
 - Add refund/cancellation policy.
+- Add final no-front-running wording.
 - Add final limitation of liability.
 - Complete legal review.

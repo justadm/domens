@@ -35,7 +35,7 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Registration remains safe: disabled by default in production, requires explicit confirmation and fresh availability checks before execution.
 - Gitea is the primary git remote (`origin`); GitHub is a backup remote (`github`).
 
-## Remaining priority TODO
+## Remaining priority work
 
 1. 24h canary report
 - First production canary report exists: `docs/canary/2026-06-14-production-canary.md`.
@@ -80,7 +80,18 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Mark historical implementation plans as superseded when they no longer track shipped state.
 - Record the final canary report before broader user rollout.
 
-6. Legal package for public promotion
+6. Trust and source transparency from competitive audit
+- Do not compete on broad auction search. Keep the product promise focused on Telegram-first explainable radar.
+- Add public "no front-running" wording before paid or public promotion.
+- Add a visible data deletion path for:
+  - watch rules;
+  - Telegram account link;
+  - alert/query history where legally and operationally allowed.
+- Add provider confidence tiers and source health status to alerts or cabinet views.
+- Build a canary examples library showing why alerts were sent and how feedback changed future alerts.
+- Map promo/product metrics to actual DB or log events before reporting them externally.
+
+7. Legal package for public promotion
 - Draft privacy policy, offer/agreement, support/disclaimer docs exist in `docs/legal/`.
 - Public launch still requires:
   - legal review;
