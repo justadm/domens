@@ -178,6 +178,7 @@ class DomainMonitoringService:
                     "per_target_run_limit": settings.monitor_alert_per_target_run_limit,
                     "per_target_daily_limit": settings.monitor_alert_per_target_daily_limit,
                     "cooldown_minutes": settings.monitor_alert_cooldown_minutes,
+                    "target_cooldown_minutes": settings.monitor_alert_target_cooldown_minutes,
                     "require_provider_check": settings.monitor_require_provider_check,
                     "digest_enabled": digest_enabled,
                     "detail_logging": detail_logging,

@@ -475,6 +475,7 @@ def test_monitoring_run_writes_compact_summary_without_per_candidate_events(monk
     monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_run_limit", 1)
     monkeypatch.setattr(monitoring.settings, "monitor_alert_per_target_daily_limit", 1)
     monkeypatch.setattr(monitoring.settings, "monitor_alert_cooldown_minutes", 1440)
+    monkeypatch.setattr(monitoring.settings, "monitor_alert_target_cooldown_minutes", 360, raising=False)
     monkeypatch.setattr(monitoring.settings, "monitor_require_provider_check", True)
     monkeypatch.setattr(monitoring.settings, "monitor_watchlist_only", True, raising=False)
     monkeypatch.setattr(monitoring.settings, "monitor_admin_fanout_enabled", False, raising=False)
@@ -491,6 +492,9 @@ def test_monitoring_run_writes_compact_summary_without_per_candidate_events(monk
     assert "monitor_run_finished" in event_types
     assert "monitor_candidate_checked" not in event_types
     assert "monitor_alert_skipped" not in event_types
+
+    started_event = next(event for event in fake_store.events if event["event_type"] == "monitor_run_started")
+    assert started_event["payload"]["target_cooldown_minutes"] == 360
 
     finished_event = next(event for event in fake_store.events if event["event_type"] == "monitor_run_finished")
     assert finished_event["payload"]["status_counts"] == {"available": 1, "registered": 1}
