@@ -79,6 +79,25 @@ POST /v1/domains/check   401 unauthorized
 POST /v1/alerts/trigger  401 unauthorized
 ```
 
+## Admin Quality Baseline
+
+Revision `aa817e4` added admin-visible canary metrics to `GET /v1/admin/quality` and the admin dashboard:
+
+- alert, feedback, and suppression totals;
+- monitor runs, checked candidates, sent alerts, and sent digests;
+- aggregated monitor skip reasons;
+- Telegram delivery error count;
+- registration and monitoring safety flags.
+
+Revision `e9c54fd` closed the admin guest-auth gap: admin routes now require a real session cookie and reject guest auth fallback.
+
+Post-hotfix unauthenticated checks:
+
+```text
+GET /v1/admin/quality?days=7  401 unauthorized
+GET /v1/admin/dashboard       401 unauthorized
+```
+
 Verification before this checkpoint:
 
 - `PYTHONPATH=. .venv313/bin/pytest tests/test_alert_suppression.py::test_monitoring_run_writes_compact_summary_without_per_candidate_events -q`: passed;

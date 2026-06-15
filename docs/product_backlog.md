@@ -32,6 +32,12 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Watchlist alerts are grouped into a per-chat Telegram digest by default (`MONITOR_DIGEST_ENABLED=true`).
 - Watchlist alerts are spaced per destination by `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES` to avoid short bursts.
 - Sensitive operational endpoints for manual checks, candidate ingestion, alert triggering, and monitor runs require an admin session.
+- Admin quality dashboard/API shows launch canary metrics:
+  - alert, feedback, suppression totals;
+  - monitor runs, checked candidates, sent alerts/digests;
+  - skip reasons and Telegram delivery errors;
+  - registration and monitoring safety flags.
+- Admin API requires a real session cookie; guest auth fallback is not accepted for admin routes.
 - Registration remains safe: disabled by default in production, requires explicit confirmation and fresh availability checks before execution.
 - Gitea is the primary git remote (`origin`); GitHub is a backup remote (`github`).
 
@@ -58,14 +64,13 @@ The Telegram-first launch baseline is now implemented and deployed:
   - feedback state;
   - digest/history view.
 
-3. Admin quality dashboard
-- Build a simple visible admin report for:
-  - daily alert/digest volume;
-  - duplicate suppression;
-  - skip reasons;
-  - feedback precision signals;
-  - Telegram delivery errors;
-  - registration safety state.
+3. Admin quality dashboard follow-up
+- Baseline admin quality report is shipped.
+- Follow-up:
+  - add time-series trend view;
+  - add explicit duplicate/same-domain grouping;
+  - add feedback precision ratios;
+  - add export/share link for auditor reports.
 
 4. Registration launch gate
 - Keep `REGISTRATION_ENABLED=false` until an explicit product/ops decision.
