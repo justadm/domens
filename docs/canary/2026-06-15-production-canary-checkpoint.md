@@ -11,7 +11,9 @@ This checkpoint tracks the fresh quiet-radar canary window started after the coo
 - Canary start: 2026-06-15 07:06:40 UTC.
 - Initial checkpoint time: 2026-06-15 07:39:31 UTC.
 - Post-deploy verification time: 2026-06-15 07:43 UTC.
+- Follow-up checkpoint time: 2026-06-15 09:48 UTC.
 - Production revision at post-deploy verification: `f6faf9b`.
+- Production code revision at follow-up checkpoint: `6d7a895`.
 
 ## Runtime Health
 
@@ -54,6 +56,48 @@ status_counts={"available": 52, "registered": 828}
 No new Telegram alert noise was observed in the first checkpoint interval.
 
 This does not yet prove the new per-destination cooldown on a real alert send, because the available candidates are currently suppressed by the per-watch daily limit from the previous canary activity. Continue observing until the previous 24h daily-limit window ages out or a new eligible candidate appears.
+
+## Follow-Up Checkpoint
+
+Read-only production DB snapshot for events since `2026-06-15 07:06:40 UTC`:
+
+```text
+alert_feedback            6
+monitor_candidates_built  26
+monitor_run_finished      25
+monitor_run_started       26
+monitor_alert_sent        0
+monitor_digest_sent       0
+telegram_delivery_error   0
+```
+
+Aggregated `monitor_run_finished` payloads:
+
+```text
+runs_finished   25
+checked_total   22000
+alerts_sent     0
+digests_sent    0
+last_finished   2026-06-15 09:48:40 UTC
+```
+
+Aggregated skip reasons:
+
+```text
+status_not_interesting  20704
+watch_daily_limit        1296
+```
+
+Latest `monitor_run_finished` payload:
+
+```text
+checked=880
+alerts_sent=0
+skip_reasons={"watch_daily_limit": 52, "status_not_interesting": 828}
+status_counts={"available": 52, "registered": 828}
+```
+
+No API log lines matching `error|exception|traceback|telegram|monitor` were found in the two-hour window before the checkpoint.
 
 ## Post-Deploy Logging Verification
 
