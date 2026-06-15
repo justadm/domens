@@ -20,7 +20,7 @@ def test_admin_access_events_returns_items(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -61,7 +61,7 @@ def test_admin_access_events_forwards_filters(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -94,7 +94,7 @@ def test_admin_users_activity_returns_items(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -134,7 +134,7 @@ def test_admin_bot_events_forwards_filters(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -167,7 +167,7 @@ def test_admin_dashboard_returns_stats(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -193,7 +193,7 @@ def test_admin_users_activity_csv(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -234,7 +234,7 @@ def test_admin_bot_events_csv(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)

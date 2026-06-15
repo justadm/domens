@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.routers.auth import AuthUserResponse, get_authenticated_user
+from app.routers.auth import AuthUserResponse, _get_current_user as get_real_session_user
 from app.routers.copilot import get_copilot_runtime_status
 from app.services.ecom_stats import fetch_external_ecom_stats
 from app.state import store
@@ -102,7 +102,7 @@ def _is_admin_uid(telegram_user_id: str) -> bool:
 
 
 def _require_admin(request: Request) -> AuthUserResponse:
-    user = get_authenticated_user(request)
+    user = get_real_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="unauthorized")
     if not _is_admin_uid(user.telegram_user_id):

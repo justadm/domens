@@ -16,11 +16,22 @@ def test_admin_endpoint_requires_auth() -> None:
     assert response.status_code == 401
 
 
+def test_admin_endpoint_rejects_guest_admin(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(admin_router.settings, "web_guest_auth_enabled", True)
+    monkeypatch.setattr(admin_router.settings, "web_guest_user_id", "guest-admin")
+    monkeypatch.setattr(admin_router.settings, "web_guest_is_admin", True)
+
+    response = client.get('/v1/admin/roles')
+
+    assert response.status_code == 401
+
+
 def test_admin_endpoint_allows_admin_session(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -44,7 +55,7 @@ def test_admin_copilot_runtime(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -63,7 +74,7 @@ def test_admin_cannot_grant_superadmin(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -81,7 +92,7 @@ def test_superadmin_can_grant_admin(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["superadmin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -101,7 +112,7 @@ def test_manager_admin_role_is_valid_for_grant(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["superadmin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
@@ -121,7 +132,7 @@ def test_role_manage_requires_basic_permission_for_non_elevated(monkeypatch) -> 
     client = TestClient(app)
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)

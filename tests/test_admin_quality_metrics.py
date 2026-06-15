@@ -9,7 +9,7 @@ from app.services.store import summarize_monitor_quality_events
 def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
     monkeypatch.setattr(
         admin_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", roles=["admin"], is_admin=True),
     )
     monkeypatch.setattr(admin_router, "_is_admin_uid", lambda _uid: True)
