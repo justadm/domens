@@ -9,9 +9,9 @@ This checkpoint tracks the fresh quiet-radar canary window started after the coo
 ## Window
 
 - Canary start: 2026-06-15 07:06:40 UTC.
-- Checkpoint time: 2026-06-15 07:39:31 UTC.
-- Production revision at checkpoint: `9a4e255`.
-- Latest repository revision at checkpoint: `94a37cf`.
+- Initial checkpoint time: 2026-06-15 07:39:31 UTC.
+- Post-deploy verification time: 2026-06-15 07:43 UTC.
+- Production revision at post-deploy verification: `f6faf9b`.
 
 ## Runtime Health
 
@@ -55,9 +55,29 @@ No new Telegram alert noise was observed in the first checkpoint interval.
 
 This does not yet prove the new per-destination cooldown on a real alert send, because the available candidates are currently suppressed by the per-watch daily limit from the previous canary activity. Continue observing until the previous 24h daily-limit window ages out or a new eligible candidate appears.
 
-## Logging Follow-Up
+## Post-Deploy Logging Verification
 
-Local code now adds `target_cooldown_minutes` to the `monitor_run_started` audit payload. This makes canary evidence self-contained in `bot_events` instead of requiring a separate container config probe.
+Revision `f6faf9b` adds `target_cooldown_minutes` to the `monitor_run_started` audit payload. This makes canary evidence self-contained in `bot_events` instead of requiring a separate container config probe.
+
+First monitor run after deploy:
+
+```text
+monitor_run_started  2026-06-15 07:41:07 UTC
+target_cooldown      360
+monitor_run_finished 2026-06-15 07:42:55 UTC
+checked              880
+alerts_sent          0
+skip_reasons         {"watch_daily_limit": 52, "status_not_interesting": 828}
+```
+
+No Telegram or monitor errors were found in the API logs since the deploy.
+
+Unauthenticated operational endpoint checks after deploy:
+
+```text
+POST /v1/domains/check   401 unauthorized
+POST /v1/alerts/trigger  401 unauthorized
+```
 
 Verification before this checkpoint:
 
