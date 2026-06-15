@@ -9,6 +9,7 @@ const BASE_MENU: NavItem[] = [
   { key: 'orders', label: 'Заказы', to: '/lk/orders', requires: 'cabinet.read' },
   { key: 'watch', label: 'Watch-правила', to: '/lk/watch', requires: 'watch.manage' },
   { key: 'alerts', label: 'Алерты', to: '/lk/alerts', requires: 'alerts.manage' },
+  { key: 'preferences', label: 'Настройки радара', to: '/lk/preferences', requires: 'alerts.manage' },
   { key: 'history', label: 'История', to: '/lk/history', requires: 'cabinet.read' },
   { key: 'admin', label: 'Админ', to: '/admin', requires: 'admin.panel.read' },
 ];

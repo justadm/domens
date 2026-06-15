@@ -318,6 +318,65 @@ def test_cabinet_alert_feedback_more_adds_quiet_watch_rule(monkeypatch) -> None:
     ]
 
 
+def test_cabinet_preferences_returns_watch_rules_and_suppressions(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_preferences",
+        lambda _uid: {
+            "watch_rules": [{"id": "r1", "query": "ai tools", "status": "active"}],
+            "suppressions": [
+                {
+                    "id": "s1",
+                    "fqdn": "stackai.ru",
+                    "reason": "user_never",
+                    "expires_at": "2027-06-13T09:05:00+00:00",
+                }
+            ],
+        },
+    )
+
+    response = client.get("/v1/cabinet/preferences")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["watch_rules"][0]["query"] == "ai tools"
+    assert data["suppressions"][0]["fqdn"] == "stackai.ru"
+
+
+def test_cabinet_preferences_delete_suppression(monkeypatch) -> None:
+    client = TestClient(app)
+    deleted: list[tuple[str, str]] = []
+    events: list[dict] = []
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "delete_alert_suppression",
+        lambda telegram_user_id, suppression_id: deleted.append((telegram_user_id, suppression_id)) or True,
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "log_bot_event",
+        lambda event, **kwargs: events.append({"event": event, **kwargs}),
+    )
+
+    response = client.delete("/v1/cabinet/preferences/suppressions/s1")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "suppression_id": "s1"}
+    assert deleted == [("13903713", "s1")]
+    assert events[0]["event"] == "cabinet_suppression_delete"
+
+
 def test_cabinet_domain_details(monkeypatch) -> None:
     client = TestClient(app)
     monkeypatch.setattr(

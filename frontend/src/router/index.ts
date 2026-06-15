@@ -6,6 +6,7 @@ import LkDashboardPage from '@/pages/LkDashboardPage.vue';
 import LkWatchPage from '@/pages/LkWatchPage.vue';
 import LkAlertsPage from '@/pages/LkAlertsPage.vue';
 import LkHistoryPage from '@/pages/LkHistoryPage.vue';
+import LkPreferencesPage from '@/pages/LkPreferencesPage.vue';
 import LkDomainsPage from '@/pages/LkDomainsPage.vue';
 import LkOrdersPage from '@/pages/LkOrdersPage.vue';
 import LkDomainDetailsPage from '@/pages/LkDomainDetailsPage.vue';
@@ -32,6 +33,7 @@ export const router = createRouter({
         { path: 'orders/:id', name: 'lk-orders-details', component: LkOrderDetailsPage, meta: { capability: 'cabinet.read' } },
         { path: 'watch', name: 'lk-watch', component: LkWatchPage, meta: { capability: 'watch.manage' } },
         { path: 'alerts', name: 'lk-alerts', component: LkAlertsPage, meta: { capability: 'alerts.manage' } },
+        { path: 'preferences', name: 'lk-preferences', component: LkPreferencesPage, meta: { capability: 'alerts.manage' } },
         { path: 'history', name: 'lk-history', component: LkHistoryPage, meta: { capability: 'cabinet.read' } },
       ],
     },

@@ -194,7 +194,49 @@ Response:
 }
 ```
 
-## 8) Admin runtime
+## 8) Cabinet preferences
+
+### GET `/v1/cabinet/preferences`
+Auth: user session required.
+
+Returns user-visible radar preferences that affect future alerts.
+
+Response `200`:
+```json
+{
+  "watch_rules": [
+    {
+      "id": "rule-uuid",
+      "query": "ai tools",
+      "status": "active",
+      "daily_alert_limit": 1
+    }
+  ],
+  "suppressions": [
+    {
+      "id": "suppression-uuid",
+      "fqdn": "stackai.ru",
+      "reason": "user_never",
+      "expires_at": "2027-06-13T09:05:00+00:00"
+    }
+  ]
+}
+```
+
+### DELETE `/v1/cabinet/preferences/suppressions/{suppression_id}`
+Auth: user session required.
+
+Deletes one user-owned hidden-domain/suppression preference.
+
+Response `200`:
+```json
+{
+  "ok": true,
+  "suppression_id": "suppression-uuid"
+}
+```
+
+## 9) Admin runtime
 
 ### GET `/v1/admin/quality`
 Auth: admin session required.
@@ -259,7 +301,7 @@ Response `200`:
 }
 ```
 
-## 9) Admin access events
+## 10) Admin access events
 
 ### GET `/v1/admin/access-events`
 Admin-only access audit list with server-side filters and pagination.

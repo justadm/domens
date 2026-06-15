@@ -115,6 +115,7 @@ const breadcrumb = computed(() => {
   if (route.path.startsWith('/lk/orders')) return 'Dashboard / LK / Orders';
   if (route.path.startsWith('/lk/watch')) return 'Dashboard / LK / Watch';
   if (route.path.startsWith('/lk/alerts')) return 'Dashboard / LK / Alerts';
+  if (route.path.startsWith('/lk/preferences')) return 'Dashboard / LK / Preferences';
   if (route.path.startsWith('/lk/history')) return 'Dashboard / LK / History';
   return 'Dashboard / LK';
 });
@@ -256,6 +257,7 @@ async function onLogout() {
 .spark-nav-icon.icon-orders { background: #78c2b8; }
 .spark-nav-icon.icon-watch { background: #9e94ea; }
 .spark-nav-icon.icon-alerts { background: #f0a36e; }
+.spark-nav-icon.icon-preferences { background: #6bbf8f; }
 .spark-nav-icon.icon-history { background: #8aa6cf; }
 .spark-nav-icon.icon-admin { background: #5e86d6; }
 

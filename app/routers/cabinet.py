@@ -95,6 +95,16 @@ class CabinetHistoryResponse(BaseModel):
     items: list[dict]
 
 
+class CabinetPreferencesResponse(BaseModel):
+    watch_rules: list[dict] = Field(default_factory=list)
+    suppressions: list[dict] = Field(default_factory=list)
+
+
+class CabinetSuppressionDeleteResponse(BaseModel):
+    ok: bool
+    suppression_id: str
+
+
 class CabinetDomainsPageResponse(BaseModel):
     total: int
     limit: int
@@ -378,6 +388,27 @@ async def cabinet_history(
             query_text=search,
         )
     )
+
+
+@router.get("/preferences", response_model=CabinetPreferencesResponse)
+async def cabinet_preferences(request: Request) -> CabinetPreferencesResponse:
+    auth_user = _require_user(request)
+    return CabinetPreferencesResponse(**store.list_user_preferences(auth_user.telegram_user_id))
+
+
+@router.delete("/preferences/suppressions/{suppression_id}", response_model=CabinetSuppressionDeleteResponse)
+async def cabinet_delete_suppression(suppression_id: str, request: Request) -> CabinetSuppressionDeleteResponse:
+    auth_user = _require_user(request)
+    ok = store.delete_alert_suppression(auth_user.telegram_user_id, suppression_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="suppression not found")
+
+    store.log_bot_event(
+        "cabinet_suppression_delete",
+        telegram_user_id=auth_user.telegram_user_id,
+        payload={"suppression_id": suppression_id},
+    )
+    return CabinetSuppressionDeleteResponse(ok=True, suppression_id=suppression_id)
 
 
 @router.get("/domains", response_model=CabinetDomainsPageResponse)
