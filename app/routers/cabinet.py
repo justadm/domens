@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.routers.auth import AuthUserResponse, get_authenticated_user
+from app.routers.auth import AuthUserResponse, _get_current_user as get_real_session_user, get_authenticated_user
 from app.schemas import ExecuteRegistrationResponse
 from app.services.alert_feedback import ensure_more_feedback_watch_rule
 from app.services.domain_checker import infer_status
@@ -164,6 +164,13 @@ class CabinetDomainRecheckResponse(BaseModel):
 
 def _require_user(request: Request) -> AuthUserResponse:
     user = get_authenticated_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    return user
+
+
+def _require_real_session_user(request: Request) -> AuthUserResponse:
+    user = get_real_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="unauthorized")
     return user
@@ -392,13 +399,13 @@ async def cabinet_history(
 
 @router.get("/preferences", response_model=CabinetPreferencesResponse)
 async def cabinet_preferences(request: Request) -> CabinetPreferencesResponse:
-    auth_user = _require_user(request)
+    auth_user = _require_real_session_user(request)
     return CabinetPreferencesResponse(**store.list_user_preferences(auth_user.telegram_user_id))
 
 
 @router.delete("/preferences/suppressions/{suppression_id}", response_model=CabinetSuppressionDeleteResponse)
 async def cabinet_delete_suppression(suppression_id: str, request: Request) -> CabinetSuppressionDeleteResponse:
-    auth_user = _require_user(request)
+    auth_user = _require_real_session_user(request)
     ok = store.delete_alert_suppression(auth_user.telegram_user_id, suppression_id)
     if not ok:
         raise HTTPException(status_code=404, detail="suppression not found")

@@ -322,7 +322,7 @@ def test_cabinet_preferences_returns_watch_rules_and_suppressions(monkeypatch) -
     client = TestClient(app)
     monkeypatch.setattr(
         cabinet_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
     )
     monkeypatch.setattr(
@@ -349,13 +349,24 @@ def test_cabinet_preferences_returns_watch_rules_and_suppressions(monkeypatch) -
     assert data["suppressions"][0]["fqdn"] == "stackai.ru"
 
 
+def test_cabinet_preferences_rejects_guest_fallback(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(cabinet_router.settings, "web_guest_auth_enabled", True)
+    monkeypatch.setattr(cabinet_router.settings, "web_guest_user_id", "13903713")
+    monkeypatch.setattr(cabinet_router.settings, "web_guest_is_admin", False)
+
+    response = client.get("/v1/cabinet/preferences")
+
+    assert response.status_code == 401
+
+
 def test_cabinet_preferences_delete_suppression(monkeypatch) -> None:
     client = TestClient(app)
     deleted: list[tuple[str, str]] = []
     events: list[dict] = []
     monkeypatch.setattr(
         cabinet_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
     )
     monkeypatch.setattr(
