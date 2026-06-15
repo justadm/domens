@@ -91,11 +91,18 @@ Revision `aa817e4` added admin-visible canary metrics to `GET /v1/admin/quality`
 
 Revision `e9c54fd` closed the admin guest-auth gap: admin routes now require a real session cookie and reject guest auth fallback.
 
+Revisions `86c20f1` and `6d7a895` added cabinet radar preferences and closed the equivalent guest-auth gap for sensitive LK preference routes:
+
+- `GET /v1/cabinet/preferences`;
+- `DELETE /v1/cabinet/preferences/suppressions/{suppression_id}`.
+
 Post-hotfix unauthenticated checks:
 
 ```text
 GET /v1/admin/quality?days=7  401 unauthorized
 GET /v1/admin/dashboard       401 unauthorized
+GET /v1/cabinet/preferences   401 unauthorized
+DELETE /v1/cabinet/preferences/suppressions/test  401 unauthorized
 ```
 
 Verification before this checkpoint:

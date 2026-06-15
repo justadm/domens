@@ -1,6 +1,6 @@
 # Product backlog
 
-Updated: 2026-06-14
+Updated: 2026-06-15
 
 ## Product direction
 
@@ -29,6 +29,11 @@ The Telegram-first launch baseline is now implemented and deployed:
 - "Less like this" creates a user-level suppression.
 - "Never repeat" suppresses the domain for the user.
 - Telegram preferences let users inspect watch rules and hidden domains, then delete them from inline buttons.
+- Web cabinet radar preferences are available in the LK:
+  - watch rules;
+  - hidden domains/suppressions;
+  - suppression deletion.
+- Cabinet preferences require a real user session; guest auth fallback is not accepted for these sensitive routes.
 - Watchlist alerts are grouped into a per-chat Telegram digest by default (`MONITOR_DIGEST_ENABLED=true`).
 - Watchlist alerts are spaced per destination by `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES` to avoid short bursts.
 - Sensitive operational endpoints for manual checks, candidate ingestion, alert triggering, and monitor runs require an admin session.
@@ -57,12 +62,11 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Confirm no repeated same-domain spam for the same destination.
 
 2. Web cabinet parity with Telegram
-- Expose the same daily-use controls in the cabinet:
-  - watch rule preferences;
-  - hidden domains/suppressions;
-  - alert explanations;
+- Baseline radar preferences are shipped in the cabinet.
+- Remaining parity:
+  - alert explanations/history view;
   - feedback state;
-  - digest/history view.
+  - digest history.
 
 3. Admin quality dashboard follow-up
 - Baseline admin quality report is shipped.
