@@ -13,11 +13,13 @@ import LkOrderDetailsPage from '@/pages/LkOrderDetailsPage.vue';
 import AdminDashboardPage from '@/pages/AdminDashboardPage.vue';
 import AdminUsersPage from '@/pages/AdminUsersPage.vue';
 import AdminEventsPage from '@/pages/AdminEventsPage.vue';
+import LegalPage from '@/pages/LegalPage.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'landing', component: LandingPage },
+    { path: '/legal', name: 'legal', component: LegalPage },
     {
       path: '/lk',
       component: AppShell,

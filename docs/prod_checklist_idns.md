@@ -23,9 +23,13 @@ sudo chown -R deploy:deploy /opt/domens
 
 ## 3) Project and environment
 ```bash
-sudo -u deploy git clone git@github.com:justadm/domens.git /opt/domens
+sudo -u deploy git clone ssh://git@git.devee.ru:65023/just/domens.git /opt/domens
 sudo -u deploy cp /opt/domens/.env.example /opt/domens/.env
 ```
+
+Repository policy:
+- Gitea `ssh://git@git.devee.ru:65023/just/domens.git` is the primary working remote (`origin`).
+- GitHub `git@github.com:justadm/domens.git` is backup/mirror only.
 
 Required values in `/opt/domens/.env`:
 - `APP_ENV=prod`
@@ -45,11 +49,13 @@ Required values in `/opt/domens/.env`:
   - `MONITOR_ALERT_PER_TARGET_RUN_LIMIT=1`
   - `MONITOR_ALERT_PER_TARGET_DAILY_LIMIT=3`
   - `MONITOR_ALERT_COOLDOWN_MINUTES=1440`
+  - `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES=360`
 - first canary safety flags:
   - `MONITOR_WATCHLIST_ONLY=true`
   - `MONITOR_ADMIN_FANOUT_ENABLED=false`
   - `MONITOR_EVENT_LOGGING_ENABLED=true`
   - `MONITOR_EVENT_LOGGING_DETAIL=false`
+  - `MONITOR_DIGEST_ENABLED=true`
 - `TELEGRAM_ADMIN_USER_IDS=13903713`
 
 ## 4) First run (nginx mode on msk)
@@ -102,15 +108,21 @@ Expected:
 - `url` is empty
 - `pending_update_count` does not grow after commands are processed
 
-## 6) GitHub Actions deploy secrets
-Set in GitHub repository settings:
-- `DEPLOY_HOST=85.239.44.49`
-- `DEPLOY_PORT=22`
-- `DEPLOY_USER=opsadmin` (or your deploy user)
-- `DEPLOY_APP_DIR=/opt/domens`
-- `DEPLOY_SSH_PRIVATE_KEY=<private key for deploy user>`
-- `DEPLOY_COMPOSE_FILE=deploy/docker-compose.nginx.yml`
-- `DEPLOY_COMPOSE_PROJECT=domens`
+## 6) Deploy from Gitea-origin working tree
+
+Normal production deploy runs on MSK from `/opt/domens`:
+
+```bash
+ssh msk 'cd /opt/domens && APP_DIR=/opt/domens BRANCH=main COMPOSE_FILE=deploy/docker-compose.nginx.yml COMPOSE_PROJECT=domens bash scripts/deploy_prod.sh'
+```
+
+Expected deploy behavior:
+- fetches from primary Gitea remote;
+- checks out `main`;
+- rebuilds/recreates the compose services;
+- leaves host nginx in charge of ports `80/443`.
+
+GitHub Actions deploy remains a backup path only; see `docs/deploy_github_actions.md`.
 
 ## 7) Smoke tests after deploy
 ```bash
@@ -130,6 +142,12 @@ Telegram checks:
 
 ```bash
 ssh msk 'docker exec -i domens-postgres-1 psql -U domens -d domens -c "select created_at,event_type,telegram_chat_id,payload from bot_events where event_type like '\''monitor_%'\'' order by created_at desc limit 50;"'
+```
+
+24h canary summary:
+
+```bash
+ssh msk 'docker exec -i domens-postgres-1 psql -U domens -d domens -c "select event_type, count(*) from bot_events where created_at >= now() - interval '\''24 hours'\'' and event_type like '\''monitor_%'\'' group by event_type order by event_type;"'
 ```
 
 ## 8) Switch to real registration later

@@ -1,5 +1,14 @@
 # Product Launch Implementation Plan
 
+Status: historical implementation plan. It is intentionally not the current checklist.
+
+Use these current sources instead:
+- `docs/product_backlog.md` for shipped state and remaining product work;
+- `docs/product_launch_runbook.md` for canary and rollback;
+- `docs/prod_checklist_idns.md` for production deploy and smoke checks.
+
+Many checkbox items below were implemented after this plan was written, but the file was not maintained step-by-step. Do not treat unchecked boxes as current truth without verifying code and the current backlog.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn Domens from a working MVP into a quiet, reliable, explainable Telegram-first domain radar suitable for a small production launch.

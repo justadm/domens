@@ -1,5 +1,10 @@
 # Deploy to VPS via GitHub Actions
 
+Status: backup path. The primary production remote is Gitea:
+`ssh://git@git.devee.ru:65023/just/domens.git`.
+
+Use the direct MSK deploy path from `docs/prod_checklist_idns.md` for normal production deploys. Keep this document only for GitHub mirror/backup automation.
+
 ## 1) DNS and domain
 1. Create a temporary subdomain, e.g. `domens.dev.example.com`.
 2. Point `A` record to your VPS public IP.

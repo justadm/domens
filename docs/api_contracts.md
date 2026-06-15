@@ -5,6 +5,8 @@
 ### POST `/v1/domains/check`
 Пакетная проверка доменов по доступности/статусу.
 
+Auth: admin session required. This endpoint can trigger provider checks and must not be public.
+
 Request:
 ```json
 {
@@ -38,6 +40,8 @@ Response `200`:
 ### POST `/v1/domains/candidates`
 Добавление кандидатов (из трендов, словарей, внешних источников).
 
+Auth: admin session required.
+
 Request:
 ```json
 {
@@ -57,6 +61,8 @@ Response `202`:
 
 ### POST `/v1/alerts/trigger`
 Создает алерт и отправляет уведомление в Telegram с кнопками подтверждения.
+
+Auth: admin session required. Normal product alerts should be created by the monitoring service, not by public clients.
 
 Request:
 ```json

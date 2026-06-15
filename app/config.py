@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     monitor_alert_statuses: str = "available,pending_delete"
     monitor_require_provider_check: bool = True
     monitor_alert_cooldown_minutes: int = 1440
+    monitor_alert_target_cooldown_minutes: int = 360
     monitor_alert_per_target_run_limit: int = 1
     monitor_alert_per_target_daily_limit: int = 3
     monitor_alert_global_run_limit: int = 3

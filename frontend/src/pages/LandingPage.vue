@@ -6,6 +6,7 @@
       <div class="actions">
         <RouterLink class="btn" to="/lk">Открыть ЛК</RouterLink>
         <RouterLink class="btn" to="/admin">Открыть Admin</RouterLink>
+        <RouterLink class="btn" to="/legal">Юридическая информация</RouterLink>
       </div>
     </div>
   </div>

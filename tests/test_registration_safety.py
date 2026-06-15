@@ -105,3 +105,38 @@ def test_execute_registration_blocks_unknown_availability(monkeypatch) -> None:
     assert body['registrar_response']['availability_check']['available'] is None
     assert state['status'] == 'failed'
     assert state['payload']['error_message'] == 'fresh availability check failed'
+
+
+def test_execute_registration_does_not_treat_dns_reserve_as_registered(monkeypatch) -> None:
+    order_id = str(uuid.uuid4())
+    fake_order = SimpleNamespace(order_id=order_id, domain='example.com', status='queued')
+    states: list[str] = []
+
+    monkeypatch.setattr(registrations.settings, 'registration_enabled', True)
+    monkeypatch.setattr(registrations.settings, 'registration_require_available_check', False)
+    monkeypatch.setattr(
+        registrations,
+        'store',
+        SimpleNamespace(
+            get_order=lambda oid: fake_order if oid == order_id else None,
+            set_order_status=lambda oid, status, **kwargs: states.append(status),
+        ),
+    )
+
+    async def fake_register_domain(domain: str) -> dict:
+        return {'result': 'reserved_dns_zone', 'provider': 'selectel_dns', 'domain': domain}
+
+    monkeypatch.setattr(
+        registrations,
+        'registrar_client',
+        SimpleNamespace(register_domain=fake_register_domain),
+    )
+
+    client = TestClient(app)
+    response = client.post(f'/v1/registrations/{order_id}/execute')
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body['status'] == 'failed'
+    assert body['registrar_response']['result'] == 'reserved_dns_zone'
+    assert states == ['sent_to_registrar', 'failed']

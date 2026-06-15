@@ -1526,6 +1526,25 @@ class PostgresStore:
             rows = session.execute(query).all()
             return len(rows)
 
+    def has_recent_alert_for_destination_type(
+        self,
+        destination: str,
+        within_minutes: int = 60,
+        alert_type_prefix: str | None = None,
+    ) -> bool:
+        threshold = datetime.now(timezone.utc) - timedelta(minutes=max(1, within_minutes))
+        with self._session() as session:
+            query = (
+                select(AlertModel.id)
+                .where(AlertModel.telegram_chat_id == str(destination))
+                .where(AlertModel.created_at >= threshold)
+                .limit(1)
+            )
+            if alert_type_prefix:
+                query = query.where(AlertModel.alert_type.like(f"{alert_type_prefix}%"))
+            row = session.execute(query).scalar_one_or_none()
+            return row is not None
+
     def get_user_alert_usage_24h(self, telegram_user_id: str, per_target_daily_limit: int) -> dict:
         with self._session() as session:
             user = session.execute(

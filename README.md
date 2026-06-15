@@ -10,6 +10,7 @@ MVP-сервис для поиска/отслеживания востребов
 ## Что в репозитории
 - `docs/db_schema.sql` — схема PostgreSQL
 - `docs/api_contracts.md` — API-контракты между модулями и внешними клиентами
+- `docs/legal/` — draft privacy/offer/support пакет для closed pilot, требует юридического ревью
 - `docs/domain_base_strategy.md` — как собирать релевантную базу доменов
 - `docs/telegram_bot_scope.md` — продуктовый scope Telegram-бота (команды, дисклеймер, подписки, этапы)
 - `docs/telegram_local_and_prod_runbook.md` — как переключить Telegram с локального polling на прод webhook (IP/домен/HTTPS)
@@ -60,24 +61,28 @@ docker compose up --build -d
 ```
 
 Проверка:
-- API: http://127.0.0.1:8080/health
-- Swagger: http://127.0.0.1:8080/docs
-- Web UI: http://127.0.0.1:8080/
+- API: http://127.0.0.1:28080/health
+- Swagger: http://127.0.0.1:28080/docs
+- Web UI: http://127.0.0.1:28200/
 
-## Прод: VPS + поддомен + автодеплой из GitHub
+## Прод: VPS + поддомен + деплой из Gitea
 - Nginx mode (for busy servers with shared 80/443): `deploy/docker-compose.nginx.yml`
 - Прод compose: `deploy/docker-compose.prod.yml`
 - Shared Ollama (multi-project): `deploy/docker-compose.shared-ollama.yml`
 - Reverse proxy/HTTPS: `deploy/Caddyfile`
 - Deploy script на сервере: `scripts/deploy_prod.sh`
-- GitHub Actions workflow: `.github/workflows/deploy.yml`
-- Пошаговая инструкция: `docs/deploy_github_actions.md`
+- Основной git remote: Gitea `ssh://git@git.devee.ru:65023/just/domens.git`
+- GitHub Actions workflow остается резервным путем: `.github/workflows/deploy.yml`
+- Пошаговая инструкция: `docs/prod_checklist_idns.md`
 
 Кратко:
-1. Подними временный поддомен 3-го уровня (например `domens.dev.example.com`) на IP VPS.
+1. Подними поддомен на IP VPS.
 2. На сервере разверни репозиторий в `/opt/domens` и заполни `/opt/domens/.env`.
-3. Добавь GitHub secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_PRIVATE_KEY`, ...).
-4. Любой push в `main` автоматически выполняет деплой по SSH.
+3. Проверь safe flags: `REGISTRATION_ENABLED=false`, `MONITOR_WATCHLIST_ONLY=true`, `MONITOR_ADMIN_FANOUT_ENABLED=false`.
+4. Деплой:
+```bash
+ssh msk 'cd /opt/domens && APP_DIR=/opt/domens BRANCH=main COMPOSE_FILE=deploy/docker-compose.nginx.yml COMPOSE_PROJECT=domens bash scripts/deploy_prod.sh'
+```
 
 ## Make команды
 ```bash
@@ -188,17 +193,20 @@ make down
 - `REGISTRATION_REQUIRE_AVAILABLE_CHECK=true` выполняет pre-check доступности у регистратора перед попыткой регистрации.
 
 ## Мониторинг доменов
-- Фоновый мониторинг включен по умолчанию (`MONITOR_ENABLED=true`).
+- Фоновый мониторинг выключен по умолчанию (`MONITOR_ENABLED=false`).
 - Кандидаты строятся из `MONITOR_SEED_WORDS x MONITOR_TLDS`.
 - Фильтр алертов по статусам задается `MONITOR_ALERT_STATUSES` (рекомендуется `available,pending_delete`).
 - Строгая проверка через API провайдера: `MONITOR_REQUIRE_PROVIDER_CHECK=true` (без эвристических алертов).
-- Админ-копии алертов в Telegram: `TELEGRAM_ADMIN_USER_IDS` (список user_id через запятую).
-- Алерты отправляются в Telegram и/или MAX (если настроены chat id).
-- Ручной запуск цикла:
+- Watchlist-first canary включается через `MONITOR_WATCHLIST_ONLY=true`.
+- Админ-фан-аут выключен по умолчанию: `MONITOR_ADMIN_FANOUT_ENABLED=false`.
+- Алерты в Telegram группируются в digest при `MONITOR_DIGEST_ENABLED=true`.
+- Для одного destination действует cooldown между watchlist-алертами: `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES=360`.
+- Ручной запуск цикла требует admin-сессию:
 ```bash
-curl -X POST http://127.0.0.1:8080/v1/monitoring/run-once
+curl -X POST http://127.0.0.1:28080/v1/monitoring/run-once
 ```
 
 ## Ограничения MVP
-- Хранилище сейчас in-memory для быстрого старта API.
-- Полная SQL-схема дана в `docs/db_schema.sql` и готова для миграций.
+- В рантайме используется PostgreSQL.
+- Legal package для публичного продвижения еще не готов: нужны privacy policy, offer/agreement, контакты поддержки и условия ответственности.
+- Перед публичным запуском нужен зафиксированный 24h canary report по `docs/product_launch_runbook.md`.

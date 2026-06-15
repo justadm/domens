@@ -98,11 +98,14 @@ async def execute_registration(order_id: str) -> ExecuteRegistrationResponse:
 
     store.set_order_status(order_id, "sent_to_registrar")
     registrar_response = await registrar_client.register_domain(order.domain)
-    if registrar_response.get("result") in {"registered", "reserved_dns_zone"}:
+    if registrar_response.get("result") == "registered":
         store.set_order_status(order_id, "registered")
         status = "registered"
     else:
-        store.set_order_status(order_id, "failed")
+        error_message = None
+        if registrar_response.get("result") == "reserved_dns_zone":
+            error_message = "dns zone reserved but domain was not registered"
+        store.set_order_status(order_id, "failed", response_payload=registrar_response, error_message=error_message)
         status = "failed"
 
     return ExecuteRegistrationResponse(

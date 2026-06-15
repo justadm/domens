@@ -228,8 +228,10 @@ class DomainMonitoringService:
             global_run_limit = max(1, int(settings.monitor_alert_global_run_limit))
             per_target_sent: dict[tuple[str, str], int] = {}
             per_target_daily_sent: dict[tuple[str, str], int] = {}
+            per_target_cooldown_active: dict[tuple[str, str], bool] = {}
             per_target_run_limit = max(1, settings.monitor_alert_per_target_run_limit)
             per_target_daily_limit = max(per_target_run_limit, settings.monitor_alert_per_target_daily_limit)
+            per_target_cooldown_minutes = max(0, int(settings.monitor_alert_target_cooldown_minutes))
             per_target_lock = asyncio.Lock()
             digest_items: dict[str, list[dict]] = {}
             digest_lock = asyncio.Lock()
@@ -422,12 +424,32 @@ class DomainMonitoringService:
                                     within_hours=24,
                                     alert_type_prefix="watch_rule_match",
                                 )
+                            if key not in per_target_cooldown_active:
+                                per_target_cooldown_active[key] = (
+                                    per_target_cooldown_minutes > 0
+                                    and self.store.has_recent_alert_for_destination_type(
+                                        channel_target,
+                                        within_minutes=per_target_cooldown_minutes,
+                                        alert_type_prefix="watch_rule_match",
+                                    )
+                                )
                             effective_limit = 1 if per_target_daily_sent[key] >= int(target_daily_limit * 0.8) else per_target_run_limit
                             if per_target_sent.get(key, 0) >= effective_limit:
                                 log_skip(fqdn, "per_target_run_limit", {"rule_id": rule_id, "channel_target": channel_target})
                                 continue
                             if per_target_daily_sent[key] >= target_daily_limit:
                                 log_skip(fqdn, "watch_daily_limit", {"rule_id": rule_id, "channel_target": channel_target})
+                                continue
+                            if per_target_cooldown_active[key]:
+                                log_skip(
+                                    fqdn,
+                                    "target_cooldown",
+                                    {
+                                        "rule_id": rule_id,
+                                        "channel_target": channel_target,
+                                        "cooldown_minutes": per_target_cooldown_minutes,
+                                    },
+                                )
                                 continue
                             if self.store.has_recent_alert_for_destination(
                                 fqdn,

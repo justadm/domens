@@ -1,8 +1,9 @@
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app.config import settings
+from app.routers.guards import require_admin_user
 from app.schemas import (
     CandidateIngestRequest,
     CandidateIngestResponse,
@@ -21,7 +22,9 @@ timeweb_client = TimewebApiClient(
 
 
 @router.post("/check", response_model=DomainCheckResponse)
-async def check_domains(payload: DomainCheckRequest) -> DomainCheckResponse:
+async def check_domains(payload: DomainCheckRequest, request: Request) -> DomainCheckResponse:
+    require_admin_user(request)
+
     async def check_one(domain: str) -> DomainCheckResult:
         status, eta = await infer_status(domain, timeweb_client=timeweb_client)
         return DomainCheckResult(
@@ -39,5 +42,6 @@ async def check_domains(payload: DomainCheckRequest) -> DomainCheckResponse:
 
 
 @router.post("/candidates", response_model=CandidateIngestResponse, status_code=202)
-async def add_candidates(payload: CandidateIngestRequest) -> CandidateIngestResponse:
+async def add_candidates(payload: CandidateIngestRequest, request: Request) -> CandidateIngestResponse:
+    require_admin_user(request)
     return CandidateIngestResponse(accepted=len(payload.candidates))
