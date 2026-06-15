@@ -1,7 +1,7 @@
 from fastapi import HTTPException, Request
 
 from app.config import settings
-from app.routers.auth import AuthUserResponse, get_authenticated_user
+from app.routers.auth import AuthUserResponse, _get_current_user
 from app.state import store
 
 
@@ -10,7 +10,7 @@ def _env_admin_ids() -> set[str]:
 
 
 def require_admin_user(request: Request) -> AuthUserResponse:
-    user = get_authenticated_user(request)
+    user = _get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="unauthorized")
 
