@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.routers import admin as admin_router
 from app.routers.auth import AuthUserResponse
+from app.services.store import summarize_monitor_quality_events
 
 
 def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
@@ -20,6 +21,12 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
             "alerts_total": 2,
             "feedback_total": 1,
             "suppressed_total": 3,
+            "monitor_runs_total": 4,
+            "monitor_alerts_sent": 1,
+            "monitor_digests_sent": 1,
+            "monitor_checked_total": 88,
+            "monitor_skip_reasons": {"target_cooldown": 2, "status_not_interesting": 86},
+            "telegram_errors_total": 0,
         },
     )
 
@@ -32,4 +39,54 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
         "alerts_total": 2,
         "feedback_total": 1,
         "suppressed_total": 3,
+        "monitor_runs_total": 4,
+        "monitor_alerts_sent": 1,
+        "monitor_digests_sent": 1,
+        "monitor_checked_total": 88,
+        "monitor_skip_reasons": {"target_cooldown": 2, "status_not_interesting": 86},
+        "telegram_errors_total": 0,
+        "registration_enabled": False,
+        "monitor_enabled": False,
+        "monitor_watchlist_only": True,
+        "monitor_admin_fanout_enabled": False,
+        "monitor_alert_target_cooldown_minutes": 360,
+    }
+
+
+def test_summarize_monitor_quality_events_counts_canary_signals() -> None:
+    events = [
+        {
+            "event_type": "monitor_run_finished",
+            "payload": {
+                "checked": 10,
+                "alerts_sent": 1,
+                "skip_reasons": {"target_cooldown": 2, "status_not_interesting": 7},
+            },
+        },
+        {
+            "event_type": "monitor_run_finished",
+            "payload": {
+                "checked": 5,
+                "alerts_sent": 0,
+                "skip_reasons": {"watch_daily_limit": 5},
+            },
+        },
+        {"event_type": "monitor_alert_sent", "payload": {}},
+        {"event_type": "monitor_digest_sent", "payload": {"items_count": 3}},
+        {"event_type": "monitor_digest_sent", "payload": {"delivery": {"mode": "telegram_error"}}},
+        {"event_type": "monitor_candidate_error", "payload": {"error": "provider timeout"}},
+        {"event_type": "telegram_delivery_error", "payload": {"error": "blocked"}},
+    ]
+
+    assert summarize_monitor_quality_events(events) == {
+        "monitor_runs_total": 2,
+        "monitor_alerts_sent": 1,
+        "monitor_digests_sent": 2,
+        "monitor_checked_total": 15,
+        "monitor_skip_reasons": {
+            "status_not_interesting": 7,
+            "target_cooldown": 2,
+            "watch_daily_limit": 5,
+        },
+        "telegram_errors_total": 2,
     }

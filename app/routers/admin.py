@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.routers.auth import AuthUserResponse, get_authenticated_user
@@ -75,6 +75,17 @@ class AdminQualityResponse(BaseModel):
     alerts_total: int
     feedback_total: int
     suppressed_total: int
+    monitor_runs_total: int = 0
+    monitor_alerts_sent: int = 0
+    monitor_digests_sent: int = 0
+    monitor_checked_total: int = 0
+    monitor_skip_reasons: dict[str, int] = Field(default_factory=dict)
+    telegram_errors_total: int = 0
+    registration_enabled: bool = False
+    monitor_enabled: bool = False
+    monitor_watchlist_only: bool = True
+    monitor_admin_fanout_enabled: bool = False
+    monitor_alert_target_cooldown_minutes: int = 0
 
 
 def _env_admin_ids() -> set[str]:
@@ -144,7 +155,17 @@ async def dashboard(request: Request) -> AdminDashboardResponse:
 @router.get("/quality", response_model=AdminQualityResponse)
 async def admin_quality(request: Request, days: int = 7) -> AdminQualityResponse:
     _require_admin(request)
-    return AdminQualityResponse(**store.get_alert_quality_metrics(days=days))
+    metrics = store.get_alert_quality_metrics(days=days)
+    metrics.update(
+        {
+            "registration_enabled": bool(settings.registration_enabled),
+            "monitor_enabled": bool(settings.monitor_enabled),
+            "monitor_watchlist_only": bool(settings.monitor_watchlist_only),
+            "monitor_admin_fanout_enabled": bool(settings.monitor_admin_fanout_enabled),
+            "monitor_alert_target_cooldown_minutes": int(settings.monitor_alert_target_cooldown_minutes),
+        }
+    )
+    return AdminQualityResponse(**metrics)
 
 
 @router.get("/users-activity", response_model=AdminUsersActivityResponse)

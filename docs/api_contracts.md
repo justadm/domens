@@ -196,6 +196,39 @@ Response:
 
 ## 8) Admin runtime
 
+### GET `/v1/admin/quality`
+Auth: admin session required.
+
+Admin quality and launch canary summary for the selected rolling window.
+
+Query:
+- `days` - rolling window, clamped to 1..90 days.
+
+Response `200`:
+```json
+{
+  "days": 7,
+  "alerts_total": 2,
+  "feedback_total": 1,
+  "suppressed_total": 3,
+  "monitor_runs_total": 24,
+  "monitor_alerts_sent": 1,
+  "monitor_digests_sent": 1,
+  "monitor_checked_total": 21120,
+  "monitor_skip_reasons": {
+    "status_not_interesting": 19872,
+    "watch_daily_limit": 1248,
+    "target_cooldown": 2
+  },
+  "telegram_errors_total": 0,
+  "registration_enabled": false,
+  "monitor_enabled": true,
+  "monitor_watchlist_only": true,
+  "monitor_admin_fanout_enabled": false,
+  "monitor_alert_target_cooldown_minutes": 360
+}
+```
+
 ### GET `/v1/admin/copilot-runtime`
 Admin-only runtime snapshot for Copilot/LLM status.
 

@@ -30,6 +30,47 @@ from sqlalchemy.orm import Mapped, Session, aliased, declarative_base, mapped_co
 
 Base = declarative_base()
 
+
+def summarize_monitor_quality_events(events: list[dict]) -> dict:
+    monitor_runs_total = 0
+    monitor_alerts_sent = 0
+    monitor_digests_sent = 0
+    monitor_checked_total = 0
+    monitor_skip_reasons: dict[str, int] = {}
+    telegram_errors_total = 0
+
+    for event in events:
+        event_type = str(event.get("event_type") or "")
+        payload = event.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        if event_type == "monitor_run_finished":
+            monitor_runs_total += 1
+            monitor_checked_total += int(payload.get("checked") or 0)
+            for reason, count in (payload.get("skip_reasons") or {}).items():
+                safe_reason = str(reason)
+                monitor_skip_reasons[safe_reason] = monitor_skip_reasons.get(safe_reason, 0) + int(count or 0)
+        elif event_type == "monitor_alert_sent":
+            monitor_alerts_sent += 1
+        elif event_type == "monitor_digest_sent":
+            monitor_digests_sent += 1
+
+        lowered = event_type.lower()
+        if "telegram" in lowered and "error" in lowered:
+            telegram_errors_total += 1
+        elif isinstance(payload.get("delivery"), dict) and payload["delivery"].get("mode") == "telegram_error":
+            telegram_errors_total += 1
+
+    return {
+        "monitor_runs_total": monitor_runs_total,
+        "monitor_alerts_sent": monitor_alerts_sent,
+        "monitor_digests_sent": monitor_digests_sent,
+        "monitor_checked_total": monitor_checked_total,
+        "monitor_skip_reasons": dict(sorted(monitor_skip_reasons.items())),
+        "telegram_errors_total": telegram_errors_total,
+    }
+
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "viewer": {
         "cabinet.read",
@@ -2911,11 +2952,28 @@ class PostgresStore:
                 ).scalar()
                 or 0
             )
+            monitor_rows = session.execute(
+                select(BotEventModel.event_type, BotEventModel.payload)
+                .where(BotEventModel.created_at >= since)
+                .where(
+                    or_(
+                        func.lower(BotEventModel.event_type).like("monitor_%"),
+                        and_(
+                            func.lower(BotEventModel.event_type).contains("telegram"),
+                            func.lower(BotEventModel.event_type).contains("error"),
+                        ),
+                    )
+                )
+            ).all()
+            monitor_metrics = summarize_monitor_quality_events(
+                [{"event_type": row[0], "payload": row[1] or {}} for row in monitor_rows]
+            )
             return {
                 "days": safe_days,
                 "alerts_total": alerts_total,
                 "feedback_total": feedback_total,
                 "suppressed_total": suppressed_total,
+                **monitor_metrics,
             }
 
     def create_conversation(self, telegram_user_id: str, channel: str = "web") -> str:
