@@ -208,5 +208,5 @@ curl -X POST http://127.0.0.1:28080/v1/monitoring/run-once
 
 ## Ограничения MVP
 - В рантайме используется PostgreSQL.
-- Legal package для публичного продвижения еще не готов: нужны privacy policy, offer/agreement, контакты поддержки и условия ответственности.
-- Перед публичным запуском нужен зафиксированный 24h canary report по `docs/product_launch_runbook.md`.
+- Draft legal package есть в `docs/legal/`, но до публичного продвижения нужны legal review, реквизиты оператора, production support contacts, финальные сроки хранения и список провайдеров/processor-ов.
+- 24h canary report зафиксирован: `docs/canary/2026-06-16-production-canary-report.md`.

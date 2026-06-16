@@ -1,6 +1,6 @@
 # Product backlog
 
-Updated: 2026-06-15
+Updated: 2026-06-16
 
 ## Product direction
 
@@ -34,6 +34,8 @@ The Telegram-first launch baseline is now implemented and deployed:
   - hidden domains/suppressions;
   - suppression deletion.
 - Cabinet preferences require a real user session; guest auth fallback is not accepted for these sensitive routes.
+- Web cabinet alert history is available with explanation, feedback, and suppression state.
+- Cabinet alert history and feedback require a real user session; guest auth fallback is not accepted.
 - Watchlist alerts are grouped into a per-chat Telegram digest by default (`MONITOR_DIGEST_ENABLED=true`).
 - Watchlist alerts are spaced per destination by `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES` to avoid short bursts.
 - Sensitive operational endpoints for manual checks, candidate ingestion, alert triggering, and monitor runs require an admin session.
@@ -48,24 +50,19 @@ The Telegram-first launch baseline is now implemented and deployed:
 
 ## Remaining priority work
 
-1. 24h canary report
+1. 24h canary follow-up
 - First production canary report exists: `docs/canary/2026-06-14-production-canary.md`.
 - Result: not passed for broader rollout because three different watchlist alerts reached one destination in about 11 minutes.
-- Local remediation adds `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES=360`; deploy and observe a fresh 24h window.
-- For each canary, record daily totals:
-  - monitor runs;
-  - checked candidates;
-  - sent digests;
-  - skipped/suppressed alerts by reason;
-  - Telegram delivery errors;
-  - feedback callbacks.
-- Confirm no repeated same-domain spam for the same destination.
+- Fresh canary report after cooldown/auth/legal/safety fixes exists: `docs/canary/2026-06-16-production-canary-report.md`.
+- Result: accepted for continued closed pilot.
+- Follow-up:
+  - keep conservative monitoring flags for pilot users;
+  - keep registration disabled;
+  - record a new canary report before changing alert limits or onboarding broader traffic.
 
 2. Web cabinet parity with Telegram
-- Baseline radar preferences are shipped in the cabinet.
+- Baseline radar preferences and alert history are shipped in the cabinet.
 - Remaining parity:
-  - alert explanations/history view;
-  - feedback state;
   - digest history.
 
 3. Admin quality dashboard follow-up
@@ -87,7 +84,7 @@ The Telegram-first launch baseline is now implemented and deployed:
 5. Documentation cleanup and launch evidence
 - Keep this backlog and runbooks current after each launch-related patch.
 - Mark historical implementation plans as superseded when they no longer track shipped state.
-- Record the final canary report before broader user rollout.
+- Record a fresh canary report before broader user rollout or less conservative alert limits.
 
 6. Trust and source transparency from competitive audit
 - Do not compete on broad auction search. Keep the product promise focused on Telegram-first explainable radar.
@@ -102,6 +99,7 @@ The Telegram-first launch baseline is now implemented and deployed:
 
 7. Legal package for public promotion
 - Draft privacy policy, offer/agreement, support/disclaimer docs exist in `docs/legal/`.
+- Legal package index exists: `docs/legal/README.md`.
 - Public launch still requires:
   - legal review;
   - legal entity/operator details;

@@ -67,10 +67,10 @@ const sections = [
 
 const gates = [
   'legal review',
-  'support contacts',
-  'privacy policy',
-  'offer/agreement',
-  '24h canary report',
+  'operator details',
+  'production support contacts',
+  'retention periods',
+  'provider/processor list',
   'registration launch approval',
 ];
 </script>
