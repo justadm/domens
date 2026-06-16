@@ -99,6 +99,54 @@ status_counts={"available": 52, "registered": 828}
 
 No API log lines matching `error|exception|traceback|telegram|monitor` were found in the two-hour window before the checkpoint.
 
+## Multi-Account Follow-Up
+
+Read-only production DB snapshot on 2026-06-16 after adding extra Telegram accounts:
+
+```text
+username           roles  active_rules  telegram_subscription
+AlekseyTeplinsky  user   26            paused
+artem_teplinskiy  user   0             active
+kons_tep          user   0             active
+JustAdm           admin  31            active
+```
+
+Implication: the new accounts validated onboarding/profile/menu paths, but they do not yet exercise multi-user watchlist delivery. Two new accounts have alerts enabled but no watch rules; the account with watch rules has Telegram alerts paused.
+
+Read-only production DB snapshot for events since `2026-06-15 07:06:40 UTC`:
+
+```text
+monitor_run_finished      200
+monitor_run_started       202
+monitor_candidates_built  202
+monitor_alert_sent        2
+monitor_digest_sent       2
+alert_feedback            10
+checked_total             176000
+```
+
+Monitor deliveries since canary start:
+
+```text
+2026-06-15 17:44 UTC  JustAdm  assistlab.io    digest items=1
+2026-06-15 23:44 UTC  JustAdm  catcherlab.com  digest items=1
+```
+
+The two monitor deliveries to the same destination were spaced by about six hours, matching `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES=360`.
+
+Aggregated skip reasons since canary start:
+
+```text
+status_not_interesting  165622
+target_cooldown           5395
+watch_daily_limit         4880
+global_run_limit            91
+suppressed                    7
+recent_alert                  3
+```
+
+No API log lines matching `error|exception|traceback|telegram|monitor` were found in the twelve-hour window before this checkpoint.
+
 ## Post-Deploy Logging Verification
 
 Revision `f6faf9b` adds `target_cooldown_minutes` to the `monitor_run_started` audit payload. This makes canary evidence self-contained in `bot_events` instead of requiring a separate container config probe.
