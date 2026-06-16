@@ -37,6 +37,7 @@
           <option value="more">Больше таких</option>
           <option value="less">Меньше таких</option>
           <option value="never">Не повторять</option>
+          <option value="why">Почему прислали</option>
         </select>
         <input v-model.number="filters.limit" type="number" min="1" max="100" />
         <button class="btn" @click="loadAlerts(0)">Применить</button>
@@ -81,6 +82,9 @@
             <div>
               <small>Feedback</small>
               <p>{{ feedbackLabel(item.latest_feedback?.type) }}</p>
+              <p v-if="item.suppression_state?.active" class="state-note">
+                {{ suppressionLabel(item.suppression_state.reason) }}
+              </p>
             </div>
           </div>
 
@@ -88,10 +92,18 @@
             <button class="btn" @click="sendFeedback(item, 'more')" :disabled="item.savingFeedback === 'more'">
               Больше таких
             </button>
-            <button class="btn" @click="sendFeedback(item, 'less')" :disabled="item.savingFeedback === 'less'">
+            <button
+              class="btn"
+              @click="sendFeedback(item, 'less')"
+              :disabled="item.savingFeedback === 'less' || suppressionActive(item, 'user_less') || suppressionActive(item, 'user_never')"
+            >
               Меньше таких
             </button>
-            <button class="btn danger" @click="sendFeedback(item, 'never')" :disabled="item.savingFeedback === 'never'">
+            <button
+              class="btn danger"
+              @click="sendFeedback(item, 'never')"
+              :disabled="item.savingFeedback === 'never' || suppressionActive(item, 'user_never')"
+            >
               Не повторять
             </button>
           </div>
@@ -136,6 +148,13 @@ type AlertFeedback = {
   payload?: Record<string, unknown>;
 };
 
+type SuppressionState = {
+  active: boolean;
+  reason: 'user_less' | 'user_never' | string;
+  created_at?: string | null;
+  expires_at?: string | null;
+};
+
 type AlertItem = {
   id: string;
   domain: string;
@@ -148,6 +167,7 @@ type AlertItem = {
   explanation: AlertExplanation;
   latest_feedback?: AlertFeedback | null;
   feedback_counts?: Record<string, number>;
+  suppression_state?: SuppressionState | null;
   savingFeedback?: string;
 };
 
@@ -269,6 +289,14 @@ async function sendFeedback(item: AlertItem, feedbackType: 'more' | 'less' | 'ne
       ...(item.feedback_counts || {}),
       [feedbackType]: (item.feedback_counts?.[feedbackType] || 0) + 1,
     };
+    if (feedbackType === 'less' || feedbackType === 'never') {
+      item.suppression_state = {
+        active: true,
+        reason: feedbackType === 'less' ? 'user_less' : 'user_never',
+        created_at: data.feedback.created_at,
+        expires_at: null,
+      };
+    }
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -315,7 +343,19 @@ function feedbackLabel(value?: string | null): string {
   if (value === 'more') return 'Больше таких';
   if (value === 'less') return 'Меньше таких';
   if (value === 'never') return 'Не повторять';
+  if (value === 'why') return 'Открыто объяснение';
   return 'Еще нет';
+}
+
+function suppressionLabel(value?: string | null): string {
+  if (value === 'user_less') return 'Скрыто: меньше таких';
+  if (value === 'user_never') return 'Скрыто: не повторять домен';
+  return 'Скрытие активно';
+}
+
+function suppressionActive(item: AlertItem, reason: string): boolean {
+  const state = item.suppression_state;
+  return Boolean(state?.active && state.reason === reason);
 }
 
 function reasonText(item: AlertItem): string {
@@ -443,6 +483,11 @@ onMounted(refreshAll);
 }
 .reason-grid p {
   margin: 0;
+}
+.state-note {
+  color: #8a4b12;
+  font-size: 13px;
+  margin-top: 5px !important;
 }
 .actions {
   display: flex;

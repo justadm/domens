@@ -47,6 +47,33 @@ def _normalize_watch_rule_tlds(tlds: list[str] | None) -> list[str]:
     return result
 
 
+def _build_alert_suppression_state(rows: list[dict], now: datetime | None = None) -> dict | None:
+    current = now or datetime.now(timezone.utc)
+    active_rows = [
+        row
+        for row in rows
+        if row.get("reason") in {"user_less", "user_never"}
+        and (row.get("expires_at") is None or row["expires_at"] > current)
+    ]
+    if not active_rows:
+        return None
+
+    priority = {"user_never": 0, "user_less": 1}
+    selected = sorted(
+        active_rows,
+        key=lambda row: (
+            priority.get(str(row.get("reason")), 99),
+            -(row.get("created_at") or current).timestamp(),
+        ),
+    )[0]
+    return {
+        "active": True,
+        "reason": selected.get("reason"),
+        "created_at": selected.get("created_at").isoformat() if selected.get("created_at") else None,
+        "expires_at": selected.get("expires_at").isoformat() if selected.get("expires_at") else None,
+    }
+
+
 def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_runs_total = 0
     monitor_alerts_sent = 0
@@ -852,6 +879,7 @@ class PostgresStore:
                 .limit(safe_limit)
             ).all()
             alert_ids = [alert.id for alert, _domain in rows]
+            alert_domains = sorted({domain.fqdn for _alert, domain in rows})
 
             feedback_rows = []
             if alert_ids:
@@ -876,6 +904,31 @@ class PostgresStore:
                     },
                 )
 
+            suppression_rows_by_target: dict[tuple[str, str], list[dict]] = {}
+            if alert_domains:
+                now = datetime.now(timezone.utc)
+                suppression_rows = session.execute(
+                    select(AlertSuppressionModel)
+                    .where(AlertSuppressionModel.fqdn.in_(alert_domains))
+                    .where(AlertSuppressionModel.destination.in_(destinations))
+                    .where(AlertSuppressionModel.reason.in_(["user_less", "user_never"]))
+                    .where(
+                        or_(
+                            AlertSuppressionModel.expires_at.is_(None),
+                            AlertSuppressionModel.expires_at > now,
+                        )
+                    )
+                    .order_by(desc(AlertSuppressionModel.created_at))
+                ).scalars()
+                for row in suppression_rows:
+                    suppression_rows_by_target.setdefault((row.fqdn, row.destination), []).append(
+                        {
+                            "reason": row.reason,
+                            "created_at": row.created_at,
+                            "expires_at": row.expires_at,
+                        }
+                    )
+
             items: list[dict] = []
             for alert, domain in rows:
                 channel_target = str(alert.telegram_chat_id)
@@ -893,6 +946,9 @@ class PostgresStore:
                         "explanation": alert.explanation or {},
                         "latest_feedback": latest_feedback_by_alert.get(alert.id),
                         "feedback_counts": feedback_counts_by_alert.get(alert.id, {}),
+                        "suppression_state": _build_alert_suppression_state(
+                            suppression_rows_by_target.get((domain.fqdn, channel_target), [])
+                        ),
                     }
                 )
 

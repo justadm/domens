@@ -466,7 +466,7 @@ async def cabinet_alerts(
     search: str | None = None,
     feedback: str | None = None,
 ) -> CabinetAlertsPageResponse:
-    auth_user = _require_user(request)
+    auth_user = _require_real_session_user(request)
     page = store.list_user_alerts_page(
         telegram_user_id=auth_user.telegram_user_id,
         limit=limit,
@@ -483,7 +483,7 @@ async def cabinet_alert_feedback(
     payload: AlertFeedbackRequest,
     request: Request,
 ) -> CabinetAlertFeedbackResponse:
-    auth_user = _require_user(request)
+    auth_user = _require_real_session_user(request)
     feedback_type = payload.feedback_type.strip().lower()
     if feedback_type not in {"more", "less", "why", "never"}:
         raise HTTPException(status_code=400, detail="invalid feedback_type")

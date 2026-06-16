@@ -114,7 +114,7 @@ def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> N
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         cabinet_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
     )
 
@@ -151,6 +151,7 @@ def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> N
                         "created_at": "2026-06-13T09:05:00+00:00",
                     },
                     "feedback_counts": {"more": 1},
+                    "suppression_state": None,
                 }
             ],
         }
@@ -170,7 +171,34 @@ def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> N
     assert data["items"][0]["domain"] == "stackai.ru"
     assert data["items"][0]["explanation"]["score"] == 88.4
     assert data["items"][0]["latest_feedback"]["type"] == "more"
+    assert "suppression_state" in data["items"][0]
     assert "confirmation_token" not in data["items"][0]
+
+
+def test_cabinet_alerts_rejects_guest_fallback(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="guest", is_admin=False),
+    )
+    monkeypatch.setattr(cabinet_router, "get_real_session_user", lambda _request: None)
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_alerts_page",
+        lambda **_kwargs: {
+            "total": 0,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [],
+        },
+    )
+
+    response = client.get("/v1/cabinet/alerts?limit=20")
+
+    assert response.status_code == 401
 
 
 def test_cabinet_alert_feedback_records_choice_and_never_suppresses(monkeypatch) -> None:
@@ -179,7 +207,7 @@ def test_cabinet_alert_feedback_records_choice_and_never_suppresses(monkeypatch)
     suppressions: list[tuple[str, str, str, int]] = []
     monkeypatch.setattr(
         cabinet_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
     )
 
@@ -220,13 +248,28 @@ def test_cabinet_alert_feedback_records_choice_and_never_suppresses(monkeypatch)
     assert suppressions == [("stackai.ru", "13903713", "user_never", 365)]
 
 
+def test_cabinet_alert_feedback_rejects_guest_fallback(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="guest", is_admin=False),
+    )
+    monkeypatch.setattr(cabinet_router, "get_real_session_user", lambda _request: None)
+    monkeypatch.setattr(cabinet_router.store, "record_user_alert_feedback", lambda **_kwargs: None)
+
+    response = client.post("/v1/cabinet/alerts/a1/feedback", json={"feedback_type": "less"})
+
+    assert response.status_code == 401
+
+
 def test_cabinet_alert_feedback_less_adds_medium_suppression(monkeypatch) -> None:
     client = TestClient(app)
     recorded: dict[str, object] = {}
     suppressions: list[tuple[str, str, str, int]] = []
     monkeypatch.setattr(
         cabinet_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
     )
 
@@ -269,7 +312,7 @@ def test_cabinet_alert_feedback_more_adds_quiet_watch_rule(monkeypatch) -> None:
     added: list[dict] = []
     monkeypatch.setattr(
         cabinet_router,
-        "get_authenticated_user",
+        "get_real_session_user",
         lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
     )
 

@@ -194,7 +194,92 @@ Response:
 }
 ```
 
-## 8) Cabinet preferences
+## 8) Cabinet alerts
+
+### GET `/v1/cabinet/alerts`
+Auth: user session required.
+
+Returns user-visible alert history with explanations, feedback state, and active suppression state for the user's own alert destinations.
+
+Query:
+- `limit` - page size, clamped by the backend.
+- `offset` - pagination offset.
+- `search` - optional text search across domain, alert type, destination, and explanation payload.
+- `feedback` - optional filter by feedback type: `more`, `less`, `never`, or `why`.
+
+Response `200`:
+```json
+{
+  "total": 1,
+  "limit": 30,
+  "offset": 0,
+  "next_offset": null,
+  "prev_offset": null,
+  "items": [
+    {
+      "id": "alert-uuid",
+      "domain_id": "domain-uuid",
+      "domain": "assistlab.io",
+      "alert_type": "watch_rule_match:rule-uuid",
+      "channel": "telegram",
+      "channel_target": "7951273850",
+      "acknowledged": false,
+      "created_at": "2026-06-16T06:04:53+00:00",
+      "acknowledged_at": null,
+      "explanation": {
+        "score": 70,
+        "status": "available",
+        "provider": "timeweb",
+        "matched_query": "assist lab",
+        "tld": "io",
+        "length": 9,
+        "risk": "provider_checked",
+        "checked_at": "2026-06-16T06:04:53+00:00"
+      },
+      "latest_feedback": {
+        "type": "less",
+        "created_at": "2026-06-16T06:10:00+00:00",
+        "payload": {"source": "cabinet"}
+      },
+      "feedback_counts": {"less": 1},
+      "suppression_state": {
+        "active": true,
+        "reason": "user_less",
+        "created_at": "2026-06-16T06:10:00+00:00",
+        "expires_at": "2026-09-14T06:10:00+00:00"
+      }
+    }
+  ]
+}
+```
+
+### POST `/v1/cabinet/alerts/{alert_id}/feedback`
+Auth: user session required.
+
+Records feedback on a user-owned alert. `less` and `never` also create user-level suppressions.
+
+Request:
+```json
+{
+  "feedback_type": "less"
+}
+```
+
+Response `200`:
+```json
+{
+  "ok": true,
+  "alert_id": "alert-uuid",
+  "domain": "assistlab.io",
+  "feedback": {
+    "type": "less",
+    "created_at": "2026-06-16T06:10:00+00:00",
+    "payload": {"source": "cabinet"}
+  }
+}
+```
+
+## 9) Cabinet preferences
 
 ### GET `/v1/cabinet/preferences`
 Auth: user session required.
@@ -236,7 +321,7 @@ Response `200`:
 }
 ```
 
-## 9) Admin runtime
+## 10) Admin runtime
 
 ### GET `/v1/admin/quality`
 Auth: admin session required.
