@@ -116,13 +116,15 @@ The extra accounts now exercise both onboarding/profile/menu paths and multi-use
 Canary watch rules were seeded with one-alert daily limits:
 
 ```text
-artem_teplinskiy  ai tools    tlds=.io,.ai,.ru  daily_limit=1
-artem_teplinskiy  assist lab  tlds=.io,.ru      daily_limit=1
-kons_tep          crm tools   tlds=.io,.ai,.ru  daily_limit=1
-kons_tep          catch hub   tlds=.ru,.com     daily_limit=1
+artem_teplinskiy  assist lab  active  tlds=.io,.ru      daily_limit=1
+artem_teplinskiy  ai tools    paused  tlds=.io,.ai,.ru  daily_limit=1
+kons_tep          catch hub   active  tlds=.ru,.com     daily_limit=1
+kons_tep          crm tools   paused  tlds=.io,.ai,.ru  daily_limit=1
 ```
 
 Initial canary rule seeding passed TLDs without leading dots, which produced invalid candidate names such as `assistio` and `catchru`. The production rows were corrected to dotted TLDs and the codebase now normalizes watch-rule TLDs at Store boundaries.
+
+The broad seed rules (`ai tools`, `crm tools`) were paused after verification to reduce future noise. The exact canary rules remain active with `daily_limit=1`.
 
 Read-only production DB snapshot for events since `2026-06-15 07:06:40 UTC`:
 
