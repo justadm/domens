@@ -31,6 +31,22 @@ from sqlalchemy.orm import Mapped, Session, aliased, declarative_base, mapped_co
 Base = declarative_base()
 
 
+def _normalize_watch_rule_tlds(tlds: list[str] | None) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in tlds or []:
+        value = str(item).strip().lower()
+        if not value:
+            continue
+        if not value.startswith("."):
+            value = f".{value}"
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
 def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_runs_total = 0
     monitor_alerts_sent = 0
@@ -2012,7 +2028,7 @@ class PostgresStore:
             rule = UserWatchRuleModel(
                 user_id=user.id,
                 watch_query=watch_query.strip(),
-                tlds={"items": tlds or []},
+                tlds={"items": _normalize_watch_rule_tlds(tlds)},
                 min_score=min_score,
                 max_price_usd=max_price_usd,
                 max_length=max_length,
@@ -2193,7 +2209,7 @@ class PostgresStore:
                     return False
                 rule.watch_query = query_clean
             if tlds is not None:
-                rule.tlds = {"items": tlds}
+                rule.tlds = {"items": _normalize_watch_rule_tlds(tlds)}
             if min_score_set:
                 rule.min_score = min_score
             if max_price_usd_set:

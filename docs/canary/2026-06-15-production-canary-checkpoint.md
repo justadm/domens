@@ -106,12 +106,23 @@ Read-only production DB snapshot on 2026-06-16 after adding extra Telegram accou
 ```text
 username           roles  active_rules  telegram_subscription
 AlekseyTeplinsky  user   26            paused
-artem_teplinskiy  user   0             active
-kons_tep          user   0             active
+artem_teplinskiy  user   2             active
+kons_tep          user   2             active
 JustAdm           admin  31            active
 ```
 
-Implication: the new accounts validated onboarding/profile/menu paths, but they do not yet exercise multi-user watchlist delivery. Two new accounts have alerts enabled but no watch rules; the account with watch rules has Telegram alerts paused.
+The extra accounts now exercise both onboarding/profile/menu paths and multi-user watchlist delivery.
+
+Canary watch rules were seeded with one-alert daily limits:
+
+```text
+artem_teplinskiy  ai tools    tlds=.io,.ai,.ru  daily_limit=1
+artem_teplinskiy  assist lab  tlds=.io,.ru      daily_limit=1
+kons_tep          crm tools   tlds=.io,.ai,.ru  daily_limit=1
+kons_tep          catch hub   tlds=.ru,.com     daily_limit=1
+```
+
+Initial canary rule seeding passed TLDs without leading dots, which produced invalid candidate names such as `assistio` and `catchru`. The production rows were corrected to dotted TLDs and the codebase now normalizes watch-rule TLDs at Store boundaries.
 
 Read-only production DB snapshot for events since `2026-06-15 07:06:40 UTC`:
 
@@ -146,6 +157,27 @@ recent_alert                  3
 ```
 
 No API log lines matching `error|exception|traceback|telegram|monitor` were found in the twelve-hour window before this checkpoint.
+
+## Multi-Account Delivery Verification
+
+After TLD correction, two consecutive production monitor runs delivered one digest to each new active account, constrained by `MONITOR_ALERT_GLOBAL_RUN_LIMIT=1`:
+
+```text
+2026-06-16 06:04 UTC  artem_teplinskiy  assistlab.io  score=70  provider=timeweb  digest message_id=613
+2026-06-16 06:11 UTC  kons_tep          catchhub.ru   score=74  provider=timeweb  digest message_id=614
+```
+
+Both alerts carried explainable payloads:
+
+```text
+status=available
+risk=provider_checked
+matched_query=assist lab | catch hub
+buttons=why, more, less, never
+items_count=1
+```
+
+No API log lines matching `error|exception|traceback|telegram|monitor` were found in the 45-minute window around the multi-account delivery test.
 
 ## Post-Deploy Logging Verification
 
