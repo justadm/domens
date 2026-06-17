@@ -1,5 +1,9 @@
+import os
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.services.store import _build_cabinet_digest_item
 
