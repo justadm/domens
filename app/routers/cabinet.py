@@ -105,6 +105,44 @@ def _clamp_watch_daily_alert_limit(value: int | None) -> int:
     return max(1, min(int(value), 10))
 
 
+def _derive_provider_confidence(provider: str, checked_at: str | None, raw_confidence: str | None) -> str:
+    value = str(raw_confidence or "").strip().lower()
+    if value in {"provider_checked", "heuristic", "stale", "unknown", "rate_limited"}:
+        return value
+    if value == "provider_check_required":
+        return "heuristic"
+    if provider and provider != "heuristic" and checked_at:
+        return "provider_checked"
+    if provider == "heuristic" and checked_at:
+        return "heuristic"
+    return "unknown"
+
+
+def _enrich_alert_source_fields(item: dict) -> dict:
+    explanation = item.get("explanation") if isinstance(item.get("explanation"), dict) else {}
+    provider = str(item.get("provider") or explanation.get("provider") or "heuristic").strip() or "heuristic"
+    provider_status = str(
+        item.get("provider_status")
+        or explanation.get("provider_status")
+        or explanation.get("status")
+        or "unknown"
+    ).strip() or "unknown"
+    checked_at = item.get("provider_checked_at") or explanation.get("provider_checked_at") or explanation.get("checked_at")
+    checked_text = str(checked_at).strip() if checked_at else None
+    confidence = _derive_provider_confidence(
+        provider=provider,
+        checked_at=checked_text,
+        raw_confidence=str(item.get("provider_confidence") or explanation.get("provider_confidence") or explanation.get("risk") or ""),
+    )
+    return {
+        **item,
+        "provider": provider,
+        "provider_status": provider_status,
+        "provider_checked_at": checked_text,
+        "provider_confidence": confidence,
+    }
+
+
 class CabinetHistoryResponse(BaseModel):
     items: list[dict]
 
@@ -499,6 +537,7 @@ async def cabinet_alerts(
         feedback=feedback,
         domains=_parse_csv_values(domains),
     )
+    page["items"] = [_enrich_alert_source_fields(item) for item in page.get("items", [])]
     return CabinetAlertsPageResponse(**page)
 
 

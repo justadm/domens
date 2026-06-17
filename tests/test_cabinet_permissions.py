@@ -141,6 +141,7 @@ def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> N
                         "score": 88.4,
                         "status": "available",
                         "provider": "timeweb",
+                        "checked_at": "2026-06-13T08:59:00+00:00",
                         "matched_query": "stack ai",
                         "tld": "ru",
                         "length": 7,
@@ -171,9 +172,55 @@ def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> N
     }
     assert data["items"][0]["domain"] == "stackai.ru"
     assert data["items"][0]["explanation"]["score"] == 88.4
+    assert data["items"][0]["provider"] == "timeweb"
+    assert data["items"][0]["provider_status"] == "available"
+    assert data["items"][0]["provider_checked_at"] == "2026-06-13T08:59:00+00:00"
+    assert data["items"][0]["provider_confidence"] == "provider_checked"
     assert data["items"][0]["latest_feedback"]["type"] == "more"
     assert "suppression_state" in data["items"][0]
     assert "confirmation_token" not in data["items"][0]
+
+
+def test_cabinet_alerts_page_falls_back_to_unknown_source_fields(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_real_session_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_alerts_page",
+        lambda **_kwargs: {
+            "total": 1,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "id": "a1",
+                    "domain": "stackai.ru",
+                    "alert_type": "watch_rule_match:r1",
+                    "channel": "telegram",
+                    "channel_target": "13903713",
+                    "acknowledged": False,
+                    "created_at": "2026-06-13T09:00:00+00:00",
+                    "acknowledged_at": None,
+                    "explanation": {},
+                }
+            ],
+        },
+    )
+
+    response = client.get("/v1/cabinet/alerts?limit=20")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["provider"] == "heuristic"
+    assert item["provider_status"] == "unknown"
+    assert item["provider_checked_at"] is None
+    assert item["provider_confidence"] == "unknown"
 
 
 def test_cabinet_alerts_page_filters_by_digest_domains(monkeypatch) -> None:

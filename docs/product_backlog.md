@@ -35,6 +35,7 @@ The Telegram-first launch baseline is now implemented and deployed:
   - suppression deletion.
 - Cabinet preferences require a real user session; guest auth fallback is not accepted for these sensitive routes.
 - Web cabinet alert history is available with explanation, feedback, and suppression state.
+- Cabinet alert cards show source transparency fields: provider/source, provider status, checked-at time, and confidence tier.
 - Web cabinet digest history is available from monitor digest audit events.
 - Cabinet alert history and feedback require a real user session; guest auth fallback is not accepted.
 - Watchlist alerts are grouped into a per-chat Telegram digest by default (`MONITOR_DIGEST_ENABLED=true`).
@@ -94,7 +95,7 @@ The Telegram-first launch baseline is now implemented and deployed:
   - watch rules;
   - Telegram account link;
   - alert/query history where legally and operationally allowed.
-- Add provider confidence tiers and source health status to alerts or cabinet views.
+- Provider confidence tiers and source health status are visible in LK alert cards.
 - Build a canary examples library showing why alerts were sent and how feedback changed future alerts.
 - Map promo/product metrics to actual DB or log events before reporting them externally.
 

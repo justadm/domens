@@ -90,8 +90,14 @@
               <p>{{ reasonText(item) }}</p>
             </div>
             <div>
-              <small>Проверка</small>
-              <p>{{ item.explanation.provider || 'unknown' }} / {{ formatDate(item.explanation.checked_at) }}</p>
+              <small>Источник проверки</small>
+              <p>{{ providerSourceText(item) }}</p>
+              <p class="state-note">
+                Проверено: {{ formatDate(item.provider_checked_at) }}
+              </p>
+              <p class="state-note">
+                Уверенность: {{ providerConfidenceLabel(item.provider_confidence) }}
+              </p>
             </div>
             <div>
               <small>Feedback</small>
@@ -223,6 +229,10 @@ type AlertItem = {
   created_at: string;
   acknowledged_at?: string | null;
   explanation: AlertExplanation;
+  provider: string;
+  provider_status: string;
+  provider_checked_at?: string | null;
+  provider_confidence: string;
   latest_feedback?: AlertFeedback | null;
   feedback_counts?: Record<string, number>;
   suppression_state?: SuppressionState | null;
@@ -477,6 +487,20 @@ function riskLabel(value?: string | null): string {
   if (value === 'provider_checked') return 'provider checked';
   if (value === 'provider_check_required') return 'needs provider check';
   return value || 'risk unknown';
+}
+
+function providerSourceText(item: AlertItem): string {
+  const provider = item.provider || item.explanation.provider || 'heuristic';
+  const status = item.provider_status || item.explanation.status || 'unknown';
+  return `${provider} / ${status}`;
+}
+
+function providerConfidenceLabel(value?: string | null): string {
+  if (value === 'provider_checked') return 'проверено провайдером';
+  if (value === 'heuristic') return 'эвристика';
+  if (value === 'stale') return 'устаревшая проверка';
+  if (value === 'rate_limited') return 'провайдер ограничил запросы';
+  return 'unknown';
 }
 
 function feedbackLabel(value?: string | null): string {

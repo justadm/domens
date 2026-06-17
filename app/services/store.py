@@ -1032,6 +1032,24 @@ class PostgresStore:
             ).all()
             alert_ids = [alert.id for alert, _domain in rows]
             alert_domains = sorted({domain.fqdn for _alert, domain in rows})
+            domain_ids = [domain.id for _alert, domain in rows]
+
+            latest_history_by_domain: dict[uuid.UUID, dict] = {}
+            if domain_ids:
+                history_rows = session.execute(
+                    select(DomainStatusHistoryModel)
+                    .where(DomainStatusHistoryModel.domain_id.in_(domain_ids))
+                    .order_by(desc(DomainStatusHistoryModel.observed_at))
+                ).scalars()
+                for row in history_rows:
+                    latest_history_by_domain.setdefault(
+                        row.domain_id,
+                        {
+                            "provider": row.provider,
+                            "status": row.status.value,
+                            "observed_at": row.observed_at.isoformat(),
+                        },
+                    )
 
             feedback_rows = []
             if alert_ids:
@@ -1084,6 +1102,21 @@ class PostgresStore:
             items: list[dict] = []
             for alert, domain in rows:
                 channel_target = str(alert.telegram_chat_id)
+                explanation = alert.explanation or {}
+                if not isinstance(explanation, dict):
+                    explanation = {}
+                latest_history = latest_history_by_domain.get(domain.id, {})
+                provider = explanation.get("provider") or latest_history.get("provider") or "heuristic"
+                provider_checked_at = (
+                    explanation.get("checked_at")
+                    or latest_history.get("observed_at")
+                    or (domain.status_checked_at.isoformat() if domain.status_checked_at else None)
+                )
+                provider_status = (
+                    explanation.get("status")
+                    or latest_history.get("status")
+                    or (domain.current_status.value if provider_checked_at else "unknown")
+                )
                 items.append(
                     {
                         "id": str(alert.id),
@@ -1095,7 +1128,11 @@ class PostgresStore:
                         "acknowledged": bool(alert.acknowledged),
                         "created_at": alert.created_at.isoformat(),
                         "acknowledged_at": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
-                        "explanation": alert.explanation or {},
+                        "explanation": explanation,
+                        "provider": provider,
+                        "provider_status": provider_status,
+                        "provider_checked_at": provider_checked_at,
+                        "provider_confidence": explanation.get("provider_confidence") or explanation.get("risk"),
                         "latest_feedback": latest_feedback_by_alert.get(alert.id),
                         "feedback_counts": feedback_counts_by_alert.get(alert.id, {}),
                         "suppression_state": _build_alert_suppression_state(
