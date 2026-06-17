@@ -94,6 +94,54 @@ def _build_cabinet_digest_item(event, channel: str | None = None) -> dict:
     }
 
 
+def _normalize_monitor_quality_timestamp(value) -> tuple[datetime | None, str | None]:
+    if not value:
+        return None, None
+    if isinstance(value, datetime):
+        timestamp = value
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone(timezone.utc), value.isoformat()
+
+    text = str(value)
+    normalized_text = text.strip()
+    if normalized_text.endswith("Z"):
+        normalized_text = f"{normalized_text[:-1]}+00:00"
+    try:
+        timestamp = datetime.fromisoformat(normalized_text)
+    except ValueError:
+        return None, text
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc), text
+
+
+def _monitor_quality_timestamp_is_before(
+    candidate_key: datetime | None,
+    candidate_text: str,
+    current_key: datetime | None,
+    current_text: str | None,
+) -> bool:
+    if current_text is None:
+        return True
+    if candidate_key is not None and current_key is not None:
+        return candidate_key < current_key
+    return candidate_text < current_text
+
+
+def _monitor_quality_timestamp_is_after(
+    candidate_key: datetime | None,
+    candidate_text: str,
+    current_key: datetime | None,
+    current_text: str | None,
+) -> bool:
+    if current_text is None:
+        return True
+    if candidate_key is not None and current_key is not None:
+        return candidate_key > current_key
+    return candidate_text > current_text
+
+
 def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_runs_total = 0
     monitor_alerts_sent = 0
@@ -130,15 +178,29 @@ def summarize_monitor_quality_events(events: list[dict]) -> dict:
                         "count": 0,
                         "first_sent_at": None,
                         "last_sent_at": None,
+                        "_first_sent_at_key": None,
+                        "_last_sent_at_key": None,
                     },
                 )
                 group["count"] += 1
                 if created_at:
-                    created_text = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
-                    if group["first_sent_at"] is None or created_text < group["first_sent_at"]:
+                    created_key, created_text = _normalize_monitor_quality_timestamp(created_at)
+                    if created_text and _monitor_quality_timestamp_is_before(
+                        created_key,
+                        created_text,
+                        group["_first_sent_at_key"],
+                        group["first_sent_at"],
+                    ):
                         group["first_sent_at"] = created_text
-                    if group["last_sent_at"] is None or created_text > group["last_sent_at"]:
+                        group["_first_sent_at_key"] = created_key
+                    if created_text and _monitor_quality_timestamp_is_after(
+                        created_key,
+                        created_text,
+                        group["_last_sent_at_key"],
+                        group["last_sent_at"],
+                    ):
                         group["last_sent_at"] = created_text
+                        group["_last_sent_at_key"] = created_key
         elif event_type == "monitor_digest_sent":
             monitor_digests_sent += 1
 
@@ -148,10 +210,13 @@ def summarize_monitor_quality_events(events: list[dict]) -> dict:
         elif isinstance(payload.get("delivery"), dict) and payload["delivery"].get("mode") == "telegram_error":
             telegram_errors_total += 1
 
-    duplicate_alert_groups = sorted(
-        (group for group in duplicate_groups.values() if int(group["count"]) > 1),
-        key=lambda group: (-int(group["count"]), str(group["destination"]), str(group["fqdn"])),
-    )
+    duplicate_alert_groups = [
+        {key: value for key, value in group.items() if not key.startswith("_")}
+        for group in sorted(
+            (group for group in duplicate_groups.values() if int(group["count"]) > 1),
+            key=lambda group: (-int(group["count"]), str(group["destination"]), str(group["fqdn"])),
+        )
+    ]
 
     return {
         "monitor_runs_total": monitor_runs_total,

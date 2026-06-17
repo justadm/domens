@@ -127,3 +127,32 @@ def test_summarize_monitor_quality_events_counts_canary_signals() -> None:
         "monitor_duplicate_alert_groups_total": 1,
         "telegram_errors_total": 2,
     }
+
+
+def test_summarize_monitor_quality_events_orders_duplicate_timestamps_by_instant() -> None:
+    events = [
+        {
+            "event_type": "monitor_alert_sent",
+            "telegram_chat_id": "13903713",
+            "created_at": "2026-06-17T09:00:00+03:00",
+            "payload": {"fqdn": "assistlab.io"},
+        },
+        {
+            "event_type": "monitor_alert_sent",
+            "telegram_chat_id": "13903713",
+            "created_at": "2026-06-17T07:00:00+00:00",
+            "payload": {"fqdn": "assistlab.io"},
+        },
+    ]
+
+    metrics = summarize_monitor_quality_events(events)
+
+    assert metrics["monitor_duplicate_alert_groups"] == [
+        {
+            "destination": "13903713",
+            "fqdn": "assistlab.io",
+            "count": 2,
+            "first_sent_at": "2026-06-17T09:00:00+03:00",
+            "last_sent_at": "2026-06-17T07:00:00+00:00",
+        }
+    ]
