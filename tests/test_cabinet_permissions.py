@@ -167,12 +167,43 @@ def test_cabinet_alerts_page_includes_explanation_and_feedback(monkeypatch) -> N
         "offset": 0,
         "search": "stack",
         "feedback": "more",
+        "domains": [],
     }
     assert data["items"][0]["domain"] == "stackai.ru"
     assert data["items"][0]["explanation"]["score"] == 88.4
     assert data["items"][0]["latest_feedback"]["type"] == "more"
     assert "suppression_state" in data["items"][0]
     assert "confirmation_token" not in data["items"][0]
+
+
+def test_cabinet_alerts_page_filters_by_digest_domains(monkeypatch) -> None:
+    client = TestClient(app)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_real_session_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+
+    def _fake_list_user_alerts_page(**kwargs):
+        captured.update(kwargs)
+        return {
+            "total": 2,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [],
+        }
+
+    monkeypatch.setattr(cabinet_router.store, "list_user_alerts_page", _fake_list_user_alerts_page)
+
+    response = client.get(
+        "/v1/cabinet/alerts?limit=20&offset=0&domains=assistlab.io,catchhub.ru,stackai.ru"
+    )
+
+    assert response.status_code == 200
+    assert captured["domains"] == ["assistlab.io", "catchhub.ru", "stackai.ru"]
 
 
 def test_cabinet_alerts_rejects_guest_fallback(monkeypatch) -> None:

@@ -52,6 +52,11 @@
         <button class="btn" @click="loadCurrent(0)">Применить</button>
       </div>
 
+      <div v-if="activeView === 'alerts' && activeDigestDomains.length > 0" class="active-filter">
+        <span>Алерты из дайджеста: {{ activeDigestDomains.join(', ') }}</span>
+        <button class="btn" @click="clearDigestFilter">Сбросить</button>
+      </div>
+
       <p v-if="error" class="error">{{ error }}</p>
       <p v-if="loading" class="muted">Загрузка...</p>
 
@@ -251,6 +256,7 @@ const digestOffset = ref(0);
 const digestNextOffset = ref<number | null>(null);
 const digestPrevOffset = ref<number | null>(null);
 const activeView = ref<'alerts' | 'digests'>('alerts');
+const activeDigestDomains = ref<string[]>([]);
 
 const filters = reactive({
   search: '',
@@ -292,6 +298,9 @@ async function loadAlerts(targetOffset = offset.value) {
     });
     if (filters.search) params.set('search', filters.search);
     if (filters.feedback) params.set('feedback', filters.feedback);
+    if (activeDigestDomains.value.length > 0) {
+      params.set('domains', activeDigestDomains.value.join(','));
+    }
     const data = await apiRequest<{
       total: number;
       limit: number;
@@ -368,6 +377,11 @@ async function switchView(view: 'alerts' | 'digests') {
   if (view === 'digests' && digests.value.length === 0 && digestTotal.value === 0) {
     await loadDigests(0);
   }
+}
+
+async function clearDigestFilter() {
+  activeDigestDomains.value = [];
+  await loadAlerts(0);
 }
 
 async function toggleTelegram(enabled: boolean) {
@@ -494,7 +508,8 @@ function pluralDomainSuffix(count: number): string {
 async function showDigestAlerts(item: DigestItem) {
   activeView.value = 'alerts';
   filters.feedback = '';
-  filters.search = item.domains[0] || '';
+  filters.search = '';
+  activeDigestDomains.value = [...item.domains];
   await loadAlerts(0);
 }
 
@@ -600,6 +615,21 @@ onMounted(refreshAll);
   grid-template-columns: minmax(220px, 1fr) 180px 90px auto;
   gap: 8px;
   margin-bottom: 10px;
+}
+.active-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff8ed;
+  color: #7c3d12;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.active-filter span {
+  overflow-wrap: anywhere;
 }
 .alerts-meta {
   justify-content: flex-start;

@@ -206,6 +206,7 @@ Query:
 - `offset` - pagination offset.
 - `search` - optional text search across domain, alert type, destination, and explanation payload.
 - `feedback` - optional filter by feedback type: `more`, `less`, `never`, or `why`.
+- `domains` - optional comma-separated exact FQDN filter, used when opening alert rows linked to a digest.
 
 Response `200`:
 ```json

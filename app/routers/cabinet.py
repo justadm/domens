@@ -79,6 +79,20 @@ class CabinetWatchRulesResponse(BaseModel):
     items: list[dict]
 
 
+def _parse_csv_values(value: str | None, max_items: int = 50) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw_item in (value or "").split(","):
+        item = raw_item.strip().lower()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+        if len(result) >= max_items:
+            break
+    return result
+
+
 def _clamp_watch_max_length(value: int | None) -> int | None:
     if value is None:
         return None
@@ -474,6 +488,7 @@ async def cabinet_alerts(
     offset: int = 0,
     search: str | None = None,
     feedback: str | None = None,
+    domains: str | None = None,
 ) -> CabinetAlertsPageResponse:
     auth_user = _require_real_session_user(request)
     page = store.list_user_alerts_page(
@@ -482,6 +497,7 @@ async def cabinet_alerts(
         offset=offset,
         search=search,
         feedback=feedback,
+        domains=_parse_csv_values(domains),
     )
     return CabinetAlertsPageResponse(**page)
 

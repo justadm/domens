@@ -63,8 +63,8 @@ The Telegram-first launch baseline is now implemented and deployed:
 
 2. Web cabinet parity with Telegram
 - Baseline radar preferences, alert history, and digest history are shipped in the cabinet.
-- Remaining parity:
-  - deep link from digest item to all linked alert rows when a digest contains multiple domains.
+- Digest items can open all linked alert rows via multi-domain alert filtering.
+- Remaining parity: none for the current closed-pilot alert/digest workflow.
 
 3. Admin quality dashboard follow-up
 - Baseline admin quality report is shipped.

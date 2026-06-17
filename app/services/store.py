@@ -819,12 +819,20 @@ class PostgresStore:
         offset: int = 0,
         search: str | None = None,
         feedback: str | None = None,
+        domains: list[str] | None = None,
     ) -> dict:
         safe_uid = str(telegram_user_id).strip()
         safe_limit = max(1, min(int(limit), 200))
         safe_offset = max(0, int(offset))
         q = (search or "").strip().lower()
         target_feedback = (feedback or "").strip().lower()
+        target_domains = sorted(
+            {
+                str(domain).strip().lower()
+                for domain in domains or []
+                if str(domain).strip()
+            }
+        )
 
         empty = {
             "items": [],
@@ -863,6 +871,8 @@ class PostgresStore:
                 return empty
 
             filters = [AlertModel.telegram_chat_id.in_(destinations)]
+            if target_domains:
+                filters.append(func.lower(DomainModel.fqdn).in_(target_domains))
             if q:
                 filters.append(
                     or_(
