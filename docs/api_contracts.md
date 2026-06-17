@@ -386,6 +386,16 @@ Response `200`:
     "watch_daily_limit": 1248,
     "target_cooldown": 2
   },
+  "monitor_duplicate_alert_groups": [
+    {
+      "destination": "13903713",
+      "fqdn": "assistlab.io",
+      "count": 2,
+      "first_sent_at": "2026-06-17T10:00:00+00:00",
+      "last_sent_at": "2026-06-17T12:00:00+00:00"
+    }
+  ],
+  "monitor_duplicate_alert_groups_total": 1,
   "telegram_errors_total": 0,
   "registration_enabled": false,
   "monitor_enabled": true,

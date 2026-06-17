@@ -22,6 +22,7 @@
       <article class="kpi"><p>Checked 7d</p><h3>{{ quality.monitor_checked_total }}</h3></article>
       <article class="kpi"><p>Monitor alerts 7d</p><h3>{{ quality.monitor_alerts_sent }}</h3></article>
       <article class="kpi"><p>Digests 7d</p><h3>{{ quality.monitor_digests_sent }}</h3></article>
+      <article class="kpi"><p>Duplicate groups 7d</p><h3>{{ quality.monitor_duplicate_alert_groups_total }}</h3></article>
       <article class="kpi"><p>Telegram errors 7d</p><h3>{{ quality.telegram_errors_total }}</h3></article>
       <article class="kpi"><p>Registration</p><h3>{{ quality.registration_enabled ? 'ON' : 'OFF' }}</h3></article>
       <article class="kpi"><p>Radar mode</p><h3>{{ radarMode }}</h3></article>
@@ -40,6 +41,25 @@
             <td>{{ count }}</td>
           </tr>
           <tr v-if="skipReasons.length === 0"><td colspan="2">Пусто</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <article class="panel quality-panel" v-if="!loading && quality">
+      <h3>Same-domain duplicate groups</h3>
+      <table>
+        <thead>
+          <tr><th>destination</th><th>fqdn</th><th>count</th><th>first</th><th>last</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in quality.monitor_duplicate_alert_groups" :key="`${item.destination}:${item.fqdn}`">
+            <td>{{ item.destination }}</td>
+            <td>{{ item.fqdn }}</td>
+            <td>{{ item.count }}</td>
+            <td>{{ item.first_sent_at || '-' }}</td>
+            <td>{{ item.last_sent_at || '-' }}</td>
+          </tr>
+          <tr v-if="quality.monitor_duplicate_alert_groups.length === 0"><td colspan="5">Пусто</td></tr>
         </tbody>
       </table>
     </article>
@@ -99,6 +119,14 @@ type QualityResp = {
   monitor_digests_sent: number;
   monitor_checked_total: number;
   monitor_skip_reasons: Record<string, number>;
+  monitor_duplicate_alert_groups: Array<{
+    destination: string;
+    fqdn: string;
+    count: number;
+    first_sent_at?: string | null;
+    last_sent_at?: string | null;
+  }>;
+  monitor_duplicate_alert_groups_total: number;
   telegram_errors_total: number;
   registration_enabled: boolean;
   monitor_enabled: boolean;

@@ -70,9 +70,9 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Baseline admin quality report is shipped.
 - Follow-up:
   - add time-series trend view;
-  - add explicit duplicate/same-domain grouping;
   - add feedback precision ratios;
   - add export/share link for auditor reports.
+- Duplicate/same-domain grouping is shipped in admin quality API and dashboard.
 
 4. Registration launch gate
 - Keep `REGISTRATION_ENABLED=false` until an explicit product/ops decision.

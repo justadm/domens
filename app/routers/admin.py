@@ -80,6 +80,8 @@ class AdminQualityResponse(BaseModel):
     monitor_digests_sent: int = 0
     monitor_checked_total: int = 0
     monitor_skip_reasons: dict[str, int] = Field(default_factory=dict)
+    monitor_duplicate_alert_groups: list[dict] = Field(default_factory=list)
+    monitor_duplicate_alert_groups_total: int = 0
     telegram_errors_total: int = 0
     registration_enabled: bool = False
     monitor_enabled: bool = False

@@ -101,6 +101,7 @@ def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_checked_total = 0
     monitor_skip_reasons: dict[str, int] = {}
     telegram_errors_total = 0
+    duplicate_groups: dict[tuple[str, str], dict] = {}
 
     for event in events:
         event_type = str(event.get("event_type") or "")
@@ -116,6 +117,28 @@ def summarize_monitor_quality_events(events: list[dict]) -> dict:
                 monitor_skip_reasons[safe_reason] = monitor_skip_reasons.get(safe_reason, 0) + int(count or 0)
         elif event_type == "monitor_alert_sent":
             monitor_alerts_sent += 1
+            fqdn = str(payload.get("fqdn") or "").strip().lower()
+            destination = str(payload.get("destination") or event.get("telegram_chat_id") or "").strip()
+            created_at = event.get("created_at")
+            if fqdn and destination:
+                key = (destination, fqdn)
+                group = duplicate_groups.setdefault(
+                    key,
+                    {
+                        "destination": destination,
+                        "fqdn": fqdn,
+                        "count": 0,
+                        "first_sent_at": None,
+                        "last_sent_at": None,
+                    },
+                )
+                group["count"] += 1
+                if created_at:
+                    created_text = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+                    if group["first_sent_at"] is None or created_text < group["first_sent_at"]:
+                        group["first_sent_at"] = created_text
+                    if group["last_sent_at"] is None or created_text > group["last_sent_at"]:
+                        group["last_sent_at"] = created_text
         elif event_type == "monitor_digest_sent":
             monitor_digests_sent += 1
 
@@ -125,12 +148,19 @@ def summarize_monitor_quality_events(events: list[dict]) -> dict:
         elif isinstance(payload.get("delivery"), dict) and payload["delivery"].get("mode") == "telegram_error":
             telegram_errors_total += 1
 
+    duplicate_alert_groups = sorted(
+        (group for group in duplicate_groups.values() if int(group["count"]) > 1),
+        key=lambda group: (-int(group["count"]), str(group["destination"]), str(group["fqdn"])),
+    )
+
     return {
         "monitor_runs_total": monitor_runs_total,
         "monitor_alerts_sent": monitor_alerts_sent,
         "monitor_digests_sent": monitor_digests_sent,
         "monitor_checked_total": monitor_checked_total,
         "monitor_skip_reasons": dict(sorted(monitor_skip_reasons.items())),
+        "monitor_duplicate_alert_groups": duplicate_alert_groups[:20],
+        "monitor_duplicate_alert_groups_total": len(duplicate_alert_groups),
         "telegram_errors_total": telegram_errors_total,
     }
 
@@ -3141,7 +3171,7 @@ class PostgresStore:
                 or 0
             )
             monitor_rows = session.execute(
-                select(BotEventModel.event_type, BotEventModel.payload)
+                select(BotEventModel.event_type, BotEventModel.payload, BotEventModel.telegram_chat_id, BotEventModel.created_at)
                 .where(BotEventModel.created_at >= since)
                 .where(
                     or_(
@@ -3154,7 +3184,15 @@ class PostgresStore:
                 )
             ).all()
             monitor_metrics = summarize_monitor_quality_events(
-                [{"event_type": row[0], "payload": row[1] or {}} for row in monitor_rows]
+                [
+                    {
+                        "event_type": row[0],
+                        "payload": row[1] or {},
+                        "telegram_chat_id": row[2],
+                        "created_at": row[3],
+                    }
+                    for row in monitor_rows
+                ]
             )
             return {
                 "days": safe_days,

@@ -1,4 +1,9 @@
+import os
+import sys
+
 from fastapi.testclient import TestClient
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.main import app
 from app.routers import admin as admin_router
@@ -26,6 +31,8 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
             "monitor_digests_sent": 1,
             "monitor_checked_total": 88,
             "monitor_skip_reasons": {"target_cooldown": 2, "status_not_interesting": 86},
+            "monitor_duplicate_alert_groups": [],
+            "monitor_duplicate_alert_groups_total": 0,
             "telegram_errors_total": 0,
         },
     )
@@ -44,6 +51,8 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
         "monitor_digests_sent": 1,
         "monitor_checked_total": 88,
         "monitor_skip_reasons": {"target_cooldown": 2, "status_not_interesting": 86},
+        "monitor_duplicate_alert_groups": [],
+        "monitor_duplicate_alert_groups_total": 0,
         "telegram_errors_total": 0,
         "registration_enabled": False,
         "monitor_enabled": False,
@@ -72,6 +81,24 @@ def test_summarize_monitor_quality_events_counts_canary_signals() -> None:
             },
         },
         {"event_type": "monitor_alert_sent", "payload": {}},
+        {
+            "event_type": "monitor_alert_sent",
+            "telegram_chat_id": "13903713",
+            "created_at": "2026-06-17T10:00:00+00:00",
+            "payload": {"fqdn": "assistlab.io", "destination": "13903713"},
+        },
+        {
+            "event_type": "monitor_alert_sent",
+            "telegram_chat_id": "13903713",
+            "created_at": "2026-06-17T12:00:00+00:00",
+            "payload": {"fqdn": "assistlab.io", "destination": "13903713"},
+        },
+        {
+            "event_type": "monitor_alert_sent",
+            "telegram_chat_id": "13903713",
+            "created_at": "2026-06-17T13:00:00+00:00",
+            "payload": {"fqdn": "catchhub.ru", "destination": "13903713"},
+        },
         {"event_type": "monitor_digest_sent", "payload": {"items_count": 3}},
         {"event_type": "monitor_digest_sent", "payload": {"delivery": {"mode": "telegram_error"}}},
         {"event_type": "monitor_candidate_error", "payload": {"error": "provider timeout"}},
@@ -80,7 +107,7 @@ def test_summarize_monitor_quality_events_counts_canary_signals() -> None:
 
     assert summarize_monitor_quality_events(events) == {
         "monitor_runs_total": 2,
-        "monitor_alerts_sent": 1,
+        "monitor_alerts_sent": 4,
         "monitor_digests_sent": 2,
         "monitor_checked_total": 15,
         "monitor_skip_reasons": {
@@ -88,5 +115,15 @@ def test_summarize_monitor_quality_events_counts_canary_signals() -> None:
             "target_cooldown": 2,
             "watch_daily_limit": 5,
         },
+        "monitor_duplicate_alert_groups": [
+            {
+                "destination": "13903713",
+                "fqdn": "assistlab.io",
+                "count": 2,
+                "first_sent_at": "2026-06-17T10:00:00+00:00",
+                "last_sent_at": "2026-06-17T12:00:00+00:00",
+            }
+        ],
+        "monitor_duplicate_alert_groups_total": 1,
         "telegram_errors_total": 2,
     }
