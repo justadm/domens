@@ -1,6 +1,9 @@
 <template>
   <section class="page-card">
-    <h2>Общая статистика</h2>
+    <div class="page-title-row">
+      <h2>Общая статистика</h2>
+      <button class="btn" type="button" @click="downloadQualityReport">Скачать отчет</button>
+    </div>
     <p v-if="error" class="error">{{ error }}</p>
 
     <div class="kpi-grid" v-if="!loading && stats">
@@ -199,6 +202,9 @@ const radarMode = computed(() => {
   if (quality.value.monitor_watchlist_only && !quality.value.monitor_admin_fanout_enabled) return 'canary';
   return 'wide';
 });
+function downloadQualityReport() {
+  window.open('/v1/admin/quality-report.md?days=7', '_blank');
+}
 
 onMounted(async () => {
   try {
@@ -221,6 +227,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .error { color: #b42318; margin-bottom: 8px; }
 .quality-grid { margin-top: 12px; }
 .quality-panel { margin-top: 12px; }

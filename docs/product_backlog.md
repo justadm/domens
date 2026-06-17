@@ -46,6 +46,7 @@ The Telegram-first launch baseline is now implemented and deployed:
   - monitor runs, checked candidates, sent alerts/digests;
   - skip reasons and Telegram delivery errors;
   - registration and monitoring safety flags.
+- Admin quality report can be downloaded as a Markdown snapshot for auditor handoff.
 - Admin API requires a real session cookie; guest auth fallback is not accepted for admin routes.
 - Registration remains safe: disabled by default in production, requires explicit confirmation and fresh availability checks before execution.
 - Gitea is the primary git remote (`origin`); GitHub is a backup remote (`github`).
@@ -71,7 +72,6 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Baseline admin quality report is shipped.
 - Follow-up:
   - add time-series trend view;
-  - add export/share link for auditor reports.
 - Duplicate/same-domain grouping is shipped in admin quality API and dashboard.
 
 4. Registration launch gate

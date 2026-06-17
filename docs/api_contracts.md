@@ -414,6 +414,29 @@ Response `200`:
 }
 ```
 
+### GET `/v1/admin/quality-report.md`
+Auth: admin session required.
+
+Download-friendly Markdown snapshot of the same admin quality metrics used by
+`/v1/admin/quality`. The endpoint does not recalculate quality independently.
+
+Query:
+- `days` - rolling window, clamped by the shared quality metrics service to 1..90 days.
+
+Response `200`:
+- `Content-Type: text/markdown; charset=utf-8`
+- `Content-Disposition: attachment; filename="domens-quality-report-YYYY-MM-DD.md"`
+
+The report includes:
+- window and generation time;
+- safety flags;
+- totals;
+- feedback distribution;
+- duplicate groups;
+- skip reasons;
+- Telegram errors;
+- manual go/no-go notes.
+
 ### GET `/v1/admin/copilot-runtime`
 Admin-only runtime snapshot for Copilot/LLM status.
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -101,6 +101,117 @@ class AdminQualityResponse(BaseModel):
     monitor_alert_target_cooldown_minutes: int = 0
 
 
+def _build_admin_quality_metrics(days: int) -> dict:
+    metrics = store.get_alert_quality_metrics(days=days)
+    metrics.update(
+        {
+            "registration_enabled": bool(settings.registration_enabled),
+            "monitor_enabled": bool(settings.monitor_enabled),
+            "monitor_watchlist_only": bool(settings.monitor_watchlist_only),
+            "monitor_admin_fanout_enabled": bool(settings.monitor_admin_fanout_enabled),
+            "monitor_alert_target_cooldown_minutes": int(settings.monitor_alert_target_cooldown_minutes),
+        }
+    )
+    return metrics
+
+
+def _format_report_rate(value: float | int | None) -> str:
+    return f"{float(value or 0) * 100:.1f}%"
+
+
+def _markdown_cell(value) -> str:
+    return str(value if value is not None else "-").replace("|", "\\|").replace("\n", " ")
+
+
+def _format_admin_quality_report(metrics: dict, generated_at: datetime) -> str:
+    feedback = metrics.get("feedback_ratios") or {}
+    duplicate_groups = metrics.get("monitor_duplicate_alert_groups") or []
+    skip_reasons = metrics.get("monitor_skip_reasons") or {}
+
+    lines = [
+        "# Domens Admin Quality Report",
+        "",
+        f"Window days: {int(metrics.get('days') or 0)}",
+        f"generated_at: {generated_at.isoformat()}",
+        "",
+        "## Safety flags",
+        f"- registration_enabled: {bool(metrics.get('registration_enabled'))}",
+        f"- monitor_enabled: {bool(metrics.get('monitor_enabled'))}",
+        f"- monitor_watchlist_only: {bool(metrics.get('monitor_watchlist_only'))}",
+        f"- monitor_admin_fanout_enabled: {bool(metrics.get('monitor_admin_fanout_enabled'))}",
+        f"- monitor_digest_enabled: {bool(settings.monitor_digest_enabled)}",
+        f"- monitor_alert_target_cooldown_minutes: {int(metrics.get('monitor_alert_target_cooldown_minutes') or 0)}",
+        "",
+        "## Totals",
+        f"- alerts_total: {int(metrics.get('alerts_total') or 0)}",
+        f"- feedback_total: {int(metrics.get('feedback_total') or 0)}",
+        f"- suppressed_total: {int(metrics.get('suppressed_total') or 0)}",
+        f"- monitor_runs_total: {int(metrics.get('monitor_runs_total') or 0)}",
+        f"- monitor_checked_total: {int(metrics.get('monitor_checked_total') or 0)}",
+        f"- monitor_alerts_sent: {int(metrics.get('monitor_alerts_sent') or 0)}",
+        f"- monitor_digests_sent: {int(metrics.get('monitor_digests_sent') or 0)}",
+        "",
+        "## Feedback distribution",
+        "feedback_ratios:",
+        f"- more: {int(feedback.get('more') or 0)}",
+        f"- less: {int(feedback.get('less') or 0)}",
+        f"- never: {int(feedback.get('never') or 0)}",
+        f"- why: {int(feedback.get('why') or 0)}",
+        f"- positive_rate: {_format_report_rate(feedback.get('positive_rate'))}",
+        f"- negative_rate: {_format_report_rate(feedback.get('negative_rate'))}",
+        f"- total: {int(feedback.get('total') or 0)}",
+        "",
+        "## Duplicate groups",
+        "| destination | fqdn | count | first_sent_at | last_sent_at |",
+        "| --- | --- | ---: | --- | --- |",
+    ]
+    if duplicate_groups:
+        for item in duplicate_groups:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _markdown_cell(item.get("destination")),
+                        _markdown_cell(item.get("fqdn")),
+                        _markdown_cell(item.get("count")),
+                        _markdown_cell(item.get("first_sent_at")),
+                        _markdown_cell(item.get("last_sent_at")),
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("| - | - | 0 | - | - |")
+
+    lines.extend(
+        [
+            "",
+            "## Skip reasons",
+        ]
+    )
+    if skip_reasons:
+        for reason, count in sorted(skip_reasons.items()):
+            lines.append(f"- {_markdown_cell(reason)}: {int(count or 0)}")
+    else:
+        lines.append("- none: 0")
+
+    lines.extend(
+        [
+            "",
+            "## Telegram errors",
+            f"- telegram_errors_total: {int(metrics.get('telegram_errors_total') or 0)}",
+            "",
+            "## Go/no-go notes",
+            "- reviewer:",
+            "- go_no_go_decision:",
+            "- evidence_link:",
+            "- follow_up:",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _env_admin_ids() -> set[str]:
     return {item.strip() for item in str(settings.telegram_admin_user_ids or "").split(",") if item.strip()}
 
@@ -168,17 +279,22 @@ async def dashboard(request: Request) -> AdminDashboardResponse:
 @router.get("/quality", response_model=AdminQualityResponse)
 async def admin_quality(request: Request, days: int = 7) -> AdminQualityResponse:
     _require_admin(request)
-    metrics = store.get_alert_quality_metrics(days=days)
-    metrics.update(
-        {
-            "registration_enabled": bool(settings.registration_enabled),
-            "monitor_enabled": bool(settings.monitor_enabled),
-            "monitor_watchlist_only": bool(settings.monitor_watchlist_only),
-            "monitor_admin_fanout_enabled": bool(settings.monitor_admin_fanout_enabled),
-            "monitor_alert_target_cooldown_minutes": int(settings.monitor_alert_target_cooldown_minutes),
-        }
-    )
+    metrics = _build_admin_quality_metrics(days=days)
     return AdminQualityResponse(**metrics)
+
+
+@router.get("/quality-report.md")
+async def admin_quality_report(request: Request, days: int = 7) -> Response:
+    _require_admin(request)
+    generated_at = datetime.now(timezone.utc)
+    metrics = _build_admin_quality_metrics(days=days)
+    content = _format_admin_quality_report(metrics, generated_at=generated_at)
+    filename = f"domens-quality-report-{generated_at.date().isoformat()}.md"
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/users-activity", response_model=AdminUsersActivityResponse)
