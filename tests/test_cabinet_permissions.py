@@ -223,6 +223,52 @@ def test_cabinet_alerts_page_falls_back_to_unknown_source_fields(monkeypatch) ->
     assert item["provider_confidence"] == "unknown"
 
 
+def test_cabinet_alerts_page_keeps_heuristic_inferred_status_when_checked(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_real_session_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_alerts_page",
+        lambda **_kwargs: {
+            "total": 1,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "id": "a1",
+                    "domain": "stackai.ru",
+                    "alert_type": "watch_rule_match:r1",
+                    "channel": "telegram",
+                    "channel_target": "13903713",
+                    "acknowledged": False,
+                    "created_at": "2026-06-13T09:00:00+00:00",
+                    "acknowledged_at": None,
+                    "explanation": {
+                        "provider": "heuristic",
+                        "status": "available",
+                        "checked_at": "2026-06-13T08:59:00+00:00",
+                    },
+                }
+            ],
+        },
+    )
+
+    response = client.get("/v1/cabinet/alerts?limit=20")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["provider"] == "heuristic"
+    assert item["provider_status"] == "available"
+    assert item["provider_checked_at"] == "2026-06-13T08:59:00+00:00"
+    assert item["provider_confidence"] == "heuristic"
+
+
 def test_cabinet_alerts_page_filters_by_digest_domains(monkeypatch) -> None:
     client = TestClient(app)
     captured: dict[str, object] = {}

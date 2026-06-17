@@ -260,9 +260,9 @@ Response `200`:
 
 Source transparency fields are always present in cabinet alert items:
 - `provider` - provider/source used for availability context; falls back to `heuristic`.
-- `provider_status` - provider/domain status for the alert; falls back to `unknown` when no source check exists.
+- `provider_status` - provider/domain/inferred status for the alert; falls back to `unknown` when no source check exists.
 - `provider_checked_at` - timestamp of the provider/domain-state check, or `null`.
-- `provider_confidence` - source quality tier such as `provider_checked`, `heuristic`, `stale`, `rate_limited`, or `unknown`.
+- `provider_confidence` - source quality tier such as `provider_checked`, `heuristic`, `stale`, `rate_limited`, or `unknown`; `heuristic` means the status is inferred, not externally confirmed.
 
 ### POST `/v1/cabinet/alerts/{alert_id}/feedback`
 Auth: user session required.
