@@ -169,6 +169,83 @@ def build_alert_feedback_ratios(feedback_counts: dict[str, int]) -> dict:
     }
 
 
+def _empty_quality_series_bucket(day: str) -> dict:
+    return {
+        "date": day,
+        "alerts": 0,
+        "feedback": 0,
+        "suppressions": 0,
+        "monitor_runs": 0,
+        "checked": 0,
+        "digests": 0,
+        "telegram_errors": 0,
+    }
+
+
+def _quality_series_day(value) -> str | None:
+    timestamp, _text = _normalize_monitor_quality_timestamp(value)
+    if timestamp is None:
+        return None
+    return timestamp.date().isoformat()
+
+
+def build_alert_quality_series(
+    *,
+    days: int,
+    now,
+    alert_created_at: list | tuple,
+    feedback_created_at: list | tuple,
+    suppression_created_at: list | tuple,
+    monitor_events: list[dict],
+) -> list[dict]:
+    safe_days = max(1, min(int(days), 90))
+    current, _text = _normalize_monitor_quality_timestamp(now)
+    if current is None:
+        current = datetime.now(timezone.utc)
+    end_date = current.date()
+    start_date = end_date - timedelta(days=safe_days - 1)
+    buckets = {
+        (start_date + timedelta(days=offset)).isoformat(): _empty_quality_series_bucket(
+            (start_date + timedelta(days=offset)).isoformat()
+        )
+        for offset in range(safe_days)
+    }
+
+    def increment_created_at(values, key: str) -> None:
+        for value in values or []:
+            day = _quality_series_day(value)
+            if day in buckets:
+                buckets[day][key] += 1
+
+    increment_created_at(alert_created_at, "alerts")
+    increment_created_at(feedback_created_at, "feedback")
+    increment_created_at(suppression_created_at, "suppressions")
+
+    for event in monitor_events or []:
+        day = _quality_series_day(event.get("created_at"))
+        if day not in buckets:
+            continue
+        bucket = buckets[day]
+        event_type = str(event.get("event_type") or "")
+        payload = event.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        if event_type == "monitor_run_finished":
+            bucket["monitor_runs"] += 1
+            bucket["checked"] += int(payload.get("checked") or 0)
+        elif event_type == "monitor_digest_sent":
+            bucket["digests"] += 1
+
+        lowered = event_type.lower()
+        if "telegram" in lowered and "error" in lowered:
+            bucket["telegram_errors"] += 1
+        elif isinstance(payload.get("delivery"), dict) and payload["delivery"].get("mode") == "telegram_error":
+            bucket["telegram_errors"] += 1
+
+    return [buckets[day] for day in sorted(buckets)]
+
+
 def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_runs_total = 0
     monitor_alerts_sent = 0
@@ -3279,7 +3356,8 @@ class PostgresStore:
 
     def get_alert_quality_metrics(self, days: int = 7) -> dict:
         safe_days = max(1, min(int(days), 90))
-        since = datetime.now(timezone.utc) - timedelta(days=safe_days)
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(days=safe_days)
         with self._session() as session:
             alerts_total = int(
                 session.execute(
@@ -3305,6 +3383,15 @@ class PostgresStore:
                 ).scalar()
                 or 0
             )
+            alert_created_at = session.execute(
+                select(AlertModel.created_at).where(AlertModel.created_at >= since)
+            ).scalars().all()
+            feedback_created_at = session.execute(
+                select(AlertFeedbackModel.created_at).where(AlertFeedbackModel.created_at >= since)
+            ).scalars().all()
+            suppression_created_at = session.execute(
+                select(AlertSuppressionModel.created_at).where(AlertSuppressionModel.created_at >= since)
+            ).scalars().all()
             monitor_rows = session.execute(
                 select(BotEventModel.event_type, BotEventModel.payload, BotEventModel.telegram_chat_id, BotEventModel.created_at)
                 .where(BotEventModel.created_at >= since)
@@ -3318,16 +3405,17 @@ class PostgresStore:
                     )
                 )
             ).all()
+            monitor_events = [
+                {
+                    "event_type": row[0],
+                    "payload": row[1] or {},
+                    "telegram_chat_id": row[2],
+                    "created_at": row[3],
+                }
+                for row in monitor_rows
+            ]
             monitor_metrics = summarize_monitor_quality_events(
-                [
-                    {
-                        "event_type": row[0],
-                        "payload": row[1] or {},
-                        "telegram_chat_id": row[2],
-                        "created_at": row[3],
-                    }
-                    for row in monitor_rows
-                ]
+                monitor_events
             )
             return {
                 "days": safe_days,
@@ -3335,6 +3423,14 @@ class PostgresStore:
                 "feedback_total": feedback_total,
                 "suppressed_total": suppressed_total,
                 "feedback_ratios": build_alert_feedback_ratios(feedback_counts),
+                "series": build_alert_quality_series(
+                    days=safe_days,
+                    now=now,
+                    alert_created_at=alert_created_at,
+                    feedback_created_at=feedback_created_at,
+                    suppression_created_at=suppression_created_at,
+                    monitor_events=monitor_events,
+                ),
                 **monitor_metrics,
             }
 

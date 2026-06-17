@@ -80,12 +80,24 @@ class FeedbackRatiosResponse(BaseModel):
     total: int = 0
 
 
+class AdminQualitySeriesItemResponse(BaseModel):
+    date: str
+    alerts: int = 0
+    feedback: int = 0
+    suppressions: int = 0
+    monitor_runs: int = 0
+    checked: int = 0
+    digests: int = 0
+    telegram_errors: int = 0
+
+
 class AdminQualityResponse(BaseModel):
     days: int
     alerts_total: int
     feedback_total: int
     suppressed_total: int
     feedback_ratios: FeedbackRatiosResponse = Field(default_factory=FeedbackRatiosResponse)
+    series: list[AdminQualitySeriesItemResponse] = Field(default_factory=list)
     monitor_runs_total: int = 0
     monitor_alerts_sent: int = 0
     monitor_digests_sent: int = 0

@@ -53,6 +53,35 @@
     </article>
 
     <article class="panel quality-panel" v-if="!loading && quality">
+      <h3>Daily quality trend</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>date</th>
+            <th>alerts</th>
+            <th>feedback</th>
+            <th>runs</th>
+            <th>checked</th>
+            <th>digests</th>
+            <th>errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in quality.series" :key="item.date">
+            <td>{{ item.date }}</td>
+            <td>{{ item.alerts }}</td>
+            <td>{{ item.feedback }}</td>
+            <td>{{ item.monitor_runs }}</td>
+            <td>{{ item.checked }}</td>
+            <td>{{ item.digests }}</td>
+            <td>{{ item.telegram_errors }}</td>
+          </tr>
+          <tr v-if="quality.series.length === 0"><td colspan="7">Пусто</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <article class="panel quality-panel" v-if="!loading && quality">
       <h3>Canary skip reasons</h3>
       <table>
         <thead>
@@ -145,6 +174,16 @@ type QualityResp = {
     negative_rate: number;
     total: number;
   };
+  series: Array<{
+    date: string;
+    alerts: number;
+    feedback: number;
+    suppressions: number;
+    monitor_runs: number;
+    checked: number;
+    digests: number;
+    telegram_errors: number;
+  }>;
   suppressed_total: number;
   monitor_runs_total: number;
   monitor_alerts_sent: number;

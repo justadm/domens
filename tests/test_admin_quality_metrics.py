@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.main import app
 from app.routers import admin as admin_router
 from app.routers.auth import AuthUserResponse
-from app.services.store import build_alert_feedback_ratios, summarize_monitor_quality_events
+from app.services.store import build_alert_feedback_ratios, build_alert_quality_series, summarize_monitor_quality_events
 
 
 def _admin_quality_metrics(days: int = 7) -> dict:
@@ -78,6 +78,18 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
             "monitor_duplicate_alert_groups": [],
             "monitor_duplicate_alert_groups_total": 0,
             "telegram_errors_total": 0,
+            "series": [
+                {
+                    "date": "2026-06-17",
+                    "alerts": 2,
+                    "feedback": 1,
+                    "suppressions": 3,
+                    "monitor_runs": 4,
+                    "checked": 88,
+                    "digests": 1,
+                    "telegram_errors": 0,
+                }
+            ],
         },
     )
 
@@ -107,6 +119,18 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
         "monitor_duplicate_alert_groups": [],
         "monitor_duplicate_alert_groups_total": 0,
         "telegram_errors_total": 0,
+        "series": [
+            {
+                "date": "2026-06-17",
+                "alerts": 2,
+                "feedback": 1,
+                "suppressions": 3,
+                "monitor_runs": 4,
+                "checked": 88,
+                "digests": 1,
+                "telegram_errors": 0,
+            }
+        ],
         "registration_enabled": False,
         "monitor_enabled": False,
         "monitor_watchlist_only": True,
@@ -295,3 +319,67 @@ def test_build_alert_feedback_ratios_groups_quality_signals() -> None:
         "negative_rate": 0.3,
         "total": 10,
     }
+
+
+def test_build_alert_quality_series_zero_fills_daily_buckets() -> None:
+    now = "2026-06-17T15:30:00+00:00"
+    assert build_alert_quality_series(
+        days=3,
+        now=now,
+        alert_created_at=["2026-06-15T01:00:00+00:00", "2026-06-17T12:00:00+00:00"],
+        feedback_created_at=["2026-06-17T12:05:00+00:00"],
+        suppression_created_at=["2026-06-15T02:00:00+00:00"],
+        monitor_events=[
+            {
+                "event_type": "monitor_run_finished",
+                "created_at": "2026-06-15T03:00:00+00:00",
+                "payload": {"checked": 10},
+            },
+            {
+                "event_type": "monitor_run_finished",
+                "created_at": "2026-06-17T09:00:00+00:00",
+                "payload": {"checked": 20},
+            },
+            {
+                "event_type": "monitor_digest_sent",
+                "created_at": "2026-06-17T10:00:00+00:00",
+                "payload": {"delivery": {"mode": "telegram_error"}},
+            },
+            {
+                "event_type": "telegram_delivery_error",
+                "created_at": "2026-06-17T11:00:00+00:00",
+                "payload": {"error": "blocked"},
+            },
+        ],
+    ) == [
+        {
+            "date": "2026-06-15",
+            "alerts": 1,
+            "feedback": 0,
+            "suppressions": 1,
+            "monitor_runs": 1,
+            "checked": 10,
+            "digests": 0,
+            "telegram_errors": 0,
+        },
+        {
+            "date": "2026-06-16",
+            "alerts": 0,
+            "feedback": 0,
+            "suppressions": 0,
+            "monitor_runs": 0,
+            "checked": 0,
+            "digests": 0,
+            "telegram_errors": 0,
+        },
+        {
+            "date": "2026-06-17",
+            "alerts": 1,
+            "feedback": 1,
+            "suppressions": 0,
+            "monitor_runs": 1,
+            "checked": 20,
+            "digests": 1,
+            "telegram_errors": 2,
+        },
+    ]

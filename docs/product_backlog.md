@@ -44,6 +44,7 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Admin quality dashboard/API shows launch canary metrics:
   - alert, feedback, suppression totals;
   - feedback distribution ratios as a proxy quality signal;
+  - daily UTC trend buckets for alerts, feedback, monitor runs, checked candidates, digests, and Telegram errors;
   - monitor runs, checked candidates, sent alerts/digests;
   - skip reasons and Telegram delivery errors;
   - registration and monitoring safety flags.
@@ -71,8 +72,9 @@ The Telegram-first launch baseline is now implemented and deployed:
 
 3. Admin quality dashboard follow-up
 - Baseline admin quality report is shipped.
+- Daily quality trend view is shipped in `/v1/admin/quality` and the admin dashboard.
 - Follow-up:
-  - add time-series trend view;
+  - consider chart visualization later if table scanning becomes insufficient.
 - Duplicate/same-domain grouping is shipped in admin quality API and dashboard.
 
 4. Registration launch gate

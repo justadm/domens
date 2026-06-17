@@ -396,6 +396,18 @@ Response `200`:
     "negative_rate": 0.0,
     "total": 1
   },
+  "series": [
+    {
+      "date": "2026-06-17",
+      "alerts": 3,
+      "feedback": 2,
+      "suppressions": 1,
+      "monitor_runs": 4,
+      "checked": 120,
+      "digests": 2,
+      "telegram_errors": 0
+    }
+  ],
   "monitor_runs_total": 24,
   "monitor_alerts_sent": 1,
   "monitor_digests_sent": 1,
@@ -423,6 +435,8 @@ Response `200`:
   "monitor_alert_target_cooldown_minutes": 360
 }
 ```
+
+`series` contains one UTC daily bucket for each day in the clamped window, including zero-filled days, ordered ascending by `date`.
 
 ### GET `/v1/admin/quality-report.md`
 Auth: admin session required.
