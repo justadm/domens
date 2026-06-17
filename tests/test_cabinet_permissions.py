@@ -201,6 +201,80 @@ def test_cabinet_alerts_rejects_guest_fallback(monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_cabinet_digests_page_includes_delivery_payload(monkeypatch) -> None:
+    client = TestClient(app)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_real_session_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="just", is_admin=False),
+    )
+
+    def _fake_list_user_digests_page(**kwargs):
+        captured.update(kwargs)
+        return {
+            "total": 1,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [
+                {
+                    "id": "e1",
+                    "channel": "telegram",
+                    "channel_target": "13903713",
+                    "created_at": "2026-06-16T06:13:00+00:00",
+                    "domains": ["assistlab.io"],
+                    "items_count": 1,
+                    "message_id": "614",
+                    "delivery": {"mode": "telegram", "message_id": "614", "items_count": 1},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(cabinet_router.store, "list_user_digests_page", _fake_list_user_digests_page)
+
+    response = client.get("/v1/cabinet/digests?limit=20&offset=0&search=assist")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert captured == {
+        "telegram_user_id": "13903713",
+        "limit": 20,
+        "offset": 0,
+        "search": "assist",
+    }
+    assert data["items"][0]["domains"] == ["assistlab.io"]
+    assert data["items"][0]["message_id"] == "614"
+
+
+def test_cabinet_digests_rejects_guest_fallback(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setattr(
+        cabinet_router,
+        "get_authenticated_user",
+        lambda _request: AuthUserResponse(telegram_user_id="13903713", username="guest", is_admin=False),
+    )
+    monkeypatch.setattr(cabinet_router, "get_real_session_user", lambda _request: None)
+    monkeypatch.setattr(
+        cabinet_router.store,
+        "list_user_digests_page",
+        lambda **_kwargs: {
+            "total": 0,
+            "limit": 20,
+            "offset": 0,
+            "next_offset": None,
+            "prev_offset": None,
+            "items": [],
+        },
+        raising=False,
+    )
+
+    response = client.get("/v1/cabinet/digests?limit=20")
+
+    assert response.status_code == 401
+
+
 def test_cabinet_alert_feedback_records_choice_and_never_suppresses(monkeypatch) -> None:
     client = TestClient(app)
     recorded: dict[str, object] = {}

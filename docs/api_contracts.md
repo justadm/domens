@@ -279,6 +279,44 @@ Response `200`:
 }
 ```
 
+### GET `/v1/cabinet/digests`
+Auth: user session required.
+
+Returns user-visible Telegram digest history from `monitor_digest_sent` audit events for the user's own alert destinations.
+
+Query:
+- `limit` - page size, clamped by the backend.
+- `offset` - pagination offset.
+- `search` - optional text search across destination and digest payload.
+
+Response `200`:
+```json
+{
+  "total": 1,
+  "limit": 30,
+  "offset": 0,
+  "next_offset": null,
+  "prev_offset": null,
+  "items": [
+    {
+      "id": "bot-event-uuid",
+      "channel": "telegram",
+      "channel_target": "7951273850",
+      "created_at": "2026-06-16T06:13:20+00:00",
+      "domains": ["catchhub.ru"],
+      "items_count": 1,
+      "message_id": "614",
+      "delivery": {
+        "mode": "telegram",
+        "chat_id": "7951273850",
+        "message_id": "614",
+        "items_count": 1
+      }
+    }
+  ]
+}
+```
+
 ## 9) Cabinet preferences
 
 ### GET `/v1/cabinet/preferences`

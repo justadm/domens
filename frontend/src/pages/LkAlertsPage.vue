@@ -30,9 +30,18 @@
     </section>
 
     <section class="alerts-band">
+      <div class="view-tabs" aria-label="Alert history view">
+        <button class="tab-button" :class="{ active: activeView === 'alerts' }" @click="switchView('alerts')">
+          Алерты
+        </button>
+        <button class="tab-button" :class="{ active: activeView === 'digests' }" @click="switchView('digests')">
+          Дайджесты
+        </button>
+      </div>
+
       <div class="toolbar">
-        <input v-model.trim="filters.search" placeholder="Поиск по домену, причине, типу" @keyup.enter="loadAlerts(0)" />
-        <select v-model="filters.feedback" @change="loadAlerts(0)">
+        <input v-model.trim="filters.search" :placeholder="searchPlaceholder" @keyup.enter="loadCurrent(0)" />
+        <select v-if="activeView === 'alerts'" v-model="filters.feedback" @change="loadAlerts(0)">
           <option value="">feedback: all</option>
           <option value="more">Больше таких</option>
           <option value="less">Меньше таких</option>
@@ -40,18 +49,18 @@
           <option value="why">Почему прислали</option>
         </select>
         <input v-model.number="filters.limit" type="number" min="1" max="100" />
-        <button class="btn" @click="loadAlerts(0)">Применить</button>
+        <button class="btn" @click="loadCurrent(0)">Применить</button>
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
       <p v-if="loading" class="muted">Загрузка...</p>
 
       <div class="alerts-meta" v-if="!loading">
-        <strong>{{ total }}</strong>
-        <span>алертов найдено</span>
+        <strong>{{ activeTotal }}</strong>
+        <span>{{ activeView === 'alerts' ? 'алертов найдено' : 'дайджестов найдено' }}</span>
       </div>
 
-      <div class="alert-list">
+      <div v-if="activeView === 'alerts'" class="alert-list">
         <article class="alert-item" v-for="item in alerts" :key="item.id">
           <div class="alert-main">
             <div>
@@ -111,10 +120,54 @@
         <p v-if="!loading && alerts.length === 0" class="empty">Пока нет алертов под выбранные фильтры</p>
       </div>
 
-      <div class="pager" v-if="!loading && total > 0">
-        <button class="btn" @click="loadAlerts(prevOffset || 0)" :disabled="prevOffset === null">Назад</button>
-        <span>offset {{ offset }}</span>
-        <button class="btn" @click="loadAlerts(nextOffset || offset)" :disabled="nextOffset === null">Вперед</button>
+      <div v-else class="digest-list">
+        <article class="digest-item" v-for="item in digests" :key="item.id">
+          <div class="alert-main">
+            <div>
+              <div class="alert-title">
+                <strong>{{ item.items_count }} домен{{ pluralDomainSuffix(item.items_count) }}</strong>
+                <span class="badge">{{ item.channel }}</span>
+                <span class="badge muted-badge">message {{ item.message_id || '-' }}</span>
+              </div>
+              <div class="chips">
+                <span v-for="domain in item.domains" :key="`${item.id}:${domain}`">{{ domain }}</span>
+              </div>
+            </div>
+            <time>{{ formatDate(item.created_at) }}</time>
+          </div>
+
+          <div class="reason-grid digest-grid">
+            <div>
+              <small>Куда отправлено</small>
+              <p>{{ item.channel_target || '-' }}</p>
+            </div>
+            <div>
+              <small>Delivery</small>
+              <p>{{ item.delivery?.mode || item.channel }} / {{ item.message_id || '-' }}</p>
+            </div>
+            <div>
+              <small>Состав</small>
+              <p>{{ item.domains.join(', ') || 'без доменов' }}</p>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn" @click="showDigestAlerts(item)" :disabled="item.domains.length === 0">
+              Показать связанные алерты
+            </button>
+          </div>
+        </article>
+        <p v-if="!loading && digests.length === 0" class="empty">Пока нет дайджестов под выбранные фильтры</p>
+      </div>
+
+      <div class="pager" v-if="!loading && activeTotal > 0">
+        <button class="btn" @click="loadCurrent(activePrevOffset || 0)" :disabled="activePrevOffset === null">
+          Назад
+        </button>
+        <span>offset {{ activeOffset }}</span>
+        <button class="btn" @click="loadCurrent(activeNextOffset || activeOffset)" :disabled="activeNextOffset === null">
+          Вперед
+        </button>
       </div>
     </section>
   </section>
@@ -171,8 +224,20 @@ type AlertItem = {
   savingFeedback?: string;
 };
 
+type DigestItem = {
+  id: string;
+  channel: string;
+  channel_target: string;
+  created_at: string;
+  domains: string[];
+  items_count: number;
+  message_id?: string | null;
+  delivery?: Record<string, unknown>;
+};
+
 const subs = ref<Subscription[]>([]);
 const alerts = ref<AlertItem[]>([]);
+const digests = ref<DigestItem[]>([]);
 const telegramChatId = ref('');
 const maxTarget = ref('');
 const error = ref('');
@@ -181,6 +246,11 @@ const total = ref(0);
 const offset = ref(0);
 const nextOffset = ref<number | null>(null);
 const prevOffset = ref<number | null>(null);
+const digestTotal = ref(0);
+const digestOffset = ref(0);
+const digestNextOffset = ref<number | null>(null);
+const digestPrevOffset = ref<number | null>(null);
+const activeView = ref<'alerts' | 'digests'>('alerts');
 
 const filters = reactive({
   search: '',
@@ -190,6 +260,13 @@ const filters = reactive({
 
 const activeChannels = computed(
   () => subs.value.filter((x) => String(x.status || '').toLowerCase() === 'active').length,
+);
+const activeTotal = computed(() => (activeView.value === 'alerts' ? total.value : digestTotal.value));
+const activeOffset = computed(() => (activeView.value === 'alerts' ? offset.value : digestOffset.value));
+const activeNextOffset = computed(() => (activeView.value === 'alerts' ? nextOffset.value : digestNextOffset.value));
+const activePrevOffset = computed(() => (activeView.value === 'alerts' ? prevOffset.value : digestPrevOffset.value));
+const searchPlaceholder = computed(() =>
+  activeView.value === 'alerts' ? 'Поиск по домену, причине, типу' : 'Поиск по домену или каналу digest',
 );
 
 async function loadSettings() {
@@ -235,12 +312,61 @@ async function loadAlerts(targetOffset = offset.value) {
   }
 }
 
+async function loadDigests(targetOffset = digestOffset.value) {
+  loading.value = true;
+  error.value = '';
+  try {
+    const params = new URLSearchParams({
+      limit: String(Math.max(1, Math.min(100, Number(filters.limit) || 30))),
+      offset: String(Math.max(0, targetOffset)),
+    });
+    if (filters.search) params.set('search', filters.search);
+    const data = await apiRequest<{
+      total: number;
+      limit: number;
+      offset: number;
+      next_offset: number | null;
+      prev_offset: number | null;
+      items: DigestItem[];
+    }>(`/v1/cabinet/digests?${params.toString()}`);
+    digests.value = (data.items || []).map((item) => ({
+      ...item,
+      domains: item.domains || [],
+      delivery: item.delivery || {},
+    }));
+    digestTotal.value = data.total || 0;
+    digestOffset.value = data.offset || 0;
+    digestNextOffset.value = data.next_offset;
+    digestPrevOffset.value = data.prev_offset;
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadCurrent(targetOffset = activeOffset.value) {
+  if (activeView.value === 'digests') {
+    await loadDigests(targetOffset);
+    return;
+  }
+  await loadAlerts(targetOffset);
+}
+
 async function refreshAll() {
   error.value = '';
   try {
-    await Promise.all([loadSettings(), loadAlerts(0)]);
+    await Promise.all([loadSettings(), loadAlerts(0), loadDigests(0)]);
   } catch (e) {
     error.value = String(e);
+  }
+}
+
+async function switchView(view: 'alerts' | 'digests') {
+  activeView.value = view;
+  error.value = '';
+  if (view === 'digests' && digests.value.length === 0 && digestTotal.value === 0) {
+    await loadDigests(0);
   }
 }
 
@@ -252,7 +378,7 @@ async function toggleTelegram(enabled: boolean) {
       body: JSON.stringify({ enabled, chat_id: telegramChatId.value || null }),
     });
     subs.value = data.items || [];
-    await loadAlerts(0);
+    await Promise.all([loadAlerts(0), loadDigests(0)]);
   } catch (e) {
     error.value = String(e);
   }
@@ -270,7 +396,7 @@ async function toggleMax(enabled: boolean) {
       }),
     });
     subs.value = data.items || [];
-    await loadAlerts(0);
+    await Promise.all([loadAlerts(0), loadDigests(0)]);
   } catch (e) {
     error.value = String(e);
   }
@@ -358,6 +484,20 @@ function suppressionActive(item: AlertItem, reason: string): boolean {
   return Boolean(state?.active && state.reason === reason);
 }
 
+function pluralDomainSuffix(count: number): string {
+  const value = Math.abs(Number(count) || 0);
+  if (value % 10 === 1 && value % 100 !== 11) return '';
+  if ([2, 3, 4].includes(value % 10) && ![12, 13, 14].includes(value % 100)) return 'а';
+  return 'ов';
+}
+
+async function showDigestAlerts(item: DigestItem) {
+  activeView.value = 'alerts';
+  filters.feedback = '';
+  filters.search = item.domains[0] || '';
+  await loadAlerts(0);
+}
+
 function reasonText(item: AlertItem): string {
   const parts: string[] = [];
   const matchedQuery = item.explanation.matched_query;
@@ -393,6 +533,30 @@ onMounted(refreshAll);
   border-top: 1px solid var(--line);
   padding-top: 14px;
   margin-top: 14px;
+}
+.view-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.tab-button {
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+.tab-button:last-child {
+  border-right: 0;
+}
+.tab-button.active {
+  background: #ffffff;
+  color: #0f172a;
 }
 .settings-head,
 .alert-main,
@@ -446,7 +610,8 @@ onMounted(refreshAll);
   display: grid;
   gap: 10px;
 }
-.alert-item {
+.alert-item,
+.digest-item {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-2);
@@ -475,6 +640,9 @@ onMounted(refreshAll);
   grid-template-columns: 1.6fr 1fr 1fr;
   gap: 10px;
   margin-top: 12px;
+}
+.digest-grid {
+  grid-template-columns: 1fr 1fr 1.6fr;
 }
 .reason-grid small {
   display: block;

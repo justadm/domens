@@ -132,6 +132,15 @@ class CabinetAlertsPageResponse(BaseModel):
     items: list[dict]
 
 
+class CabinetDigestsPageResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    prev_offset: int | None = None
+    items: list[dict]
+
+
 class CabinetAlertFeedbackResponse(BaseModel):
     ok: bool
     alert_id: str
@@ -475,6 +484,23 @@ async def cabinet_alerts(
         feedback=feedback,
     )
     return CabinetAlertsPageResponse(**page)
+
+
+@router.get("/digests", response_model=CabinetDigestsPageResponse)
+async def cabinet_digests(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    search: str | None = None,
+) -> CabinetDigestsPageResponse:
+    auth_user = _require_real_session_user(request)
+    page = store.list_user_digests_page(
+        telegram_user_id=auth_user.telegram_user_id,
+        limit=limit,
+        offset=offset,
+        search=search,
+    )
+    return CabinetDigestsPageResponse(**page)
 
 
 @router.post("/alerts/{alert_id}/feedback", response_model=CabinetAlertFeedbackResponse)

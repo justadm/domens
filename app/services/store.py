@@ -74,6 +74,26 @@ def _build_alert_suppression_state(rows: list[dict], now: datetime | None = None
     }
 
 
+def _build_cabinet_digest_item(event, channel: str | None = None) -> dict:
+    payload = event.payload or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    delivery = payload.get("delivery") if isinstance(payload.get("delivery"), dict) else {}
+    domains = payload.get("domains") if isinstance(payload.get("domains"), list) else []
+    items_count = payload.get("items_count") or delivery.get("items_count") or len(domains)
+
+    return {
+        "id": str(event.id),
+        "channel": channel or "telegram",
+        "channel_target": str(payload.get("destination") or delivery.get("chat_id") or event.telegram_chat_id or ""),
+        "created_at": event.created_at.isoformat(),
+        "domains": [str(item) for item in domains],
+        "items_count": int(items_count or 0),
+        "message_id": str(delivery["message_id"]) if delivery.get("message_id") is not None else None,
+        "delivery": delivery,
+    }
+
+
 def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_runs_total = 0
     monitor_alerts_sent = 0
@@ -952,6 +972,92 @@ class PostgresStore:
                     }
                 )
 
+            next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
+            prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
+            return {
+                "items": items,
+                "total": total,
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "next_offset": next_offset,
+                "prev_offset": prev_offset,
+            }
+
+    def list_user_digests_page(
+        self,
+        telegram_user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        search: str | None = None,
+    ) -> dict:
+        safe_uid = str(telegram_user_id).strip()
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        q = (search or "").strip().lower()
+
+        empty = {
+            "items": [],
+            "total": 0,
+            "limit": safe_limit,
+            "offset": safe_offset,
+            "next_offset": None,
+            "prev_offset": None,
+        }
+        if not safe_uid:
+            return empty
+
+        with self._session() as session:
+            user = session.execute(
+                select(TelegramUserModel).where(TelegramUserModel.telegram_user_id == safe_uid).limit(1)
+            ).scalar_one_or_none()
+            if not user:
+                return empty
+
+            subscriptions = list(
+                session.execute(
+                    select(UserSubscriptionModel)
+                    .where(UserSubscriptionModel.user_id == user.id)
+                    .order_by(desc(UserSubscriptionModel.updated_at))
+                ).scalars()
+            )
+            destination_channels: dict[str, str] = {}
+            if user.telegram_chat_id:
+                destination_channels[str(user.telegram_chat_id)] = "telegram"
+            for sub in subscriptions:
+                if sub.channel_target:
+                    destination_channels[str(sub.channel_target)] = sub.channel_type
+
+            destinations = sorted(destination_channels)
+            if not destinations:
+                return empty
+
+            filters = [
+                BotEventModel.event_type == "monitor_digest_sent",
+                BotEventModel.telegram_chat_id.in_(destinations),
+            ]
+            if q:
+                filters.append(
+                    or_(
+                        func.lower(BotEventModel.telegram_chat_id).contains(q),
+                        func.lower(func.cast(BotEventModel.payload, Text)).contains(q),
+                    )
+                )
+
+            total_query = select(func.count()).select_from(BotEventModel).where(and_(*filters))
+            total = int(session.execute(total_query).scalar() or 0)
+
+            rows = session.execute(
+                select(BotEventModel)
+                .where(and_(*filters))
+                .order_by(desc(BotEventModel.created_at))
+                .offset(safe_offset)
+                .limit(safe_limit)
+            ).scalars()
+
+            items = [
+                _build_cabinet_digest_item(event, channel=destination_channels.get(str(event.telegram_chat_id), "telegram"))
+                for event in rows
+            ]
             next_offset = safe_offset + safe_limit if (safe_offset + safe_limit) < total else None
             prev_offset = max(0, safe_offset - safe_limit) if safe_offset > 0 else None
             return {

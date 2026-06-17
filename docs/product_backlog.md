@@ -35,6 +35,7 @@ The Telegram-first launch baseline is now implemented and deployed:
   - suppression deletion.
 - Cabinet preferences require a real user session; guest auth fallback is not accepted for these sensitive routes.
 - Web cabinet alert history is available with explanation, feedback, and suppression state.
+- Web cabinet digest history is available from monitor digest audit events.
 - Cabinet alert history and feedback require a real user session; guest auth fallback is not accepted.
 - Watchlist alerts are grouped into a per-chat Telegram digest by default (`MONITOR_DIGEST_ENABLED=true`).
 - Watchlist alerts are spaced per destination by `MONITOR_ALERT_TARGET_COOLDOWN_MINUTES` to avoid short bursts.
@@ -61,9 +62,9 @@ The Telegram-first launch baseline is now implemented and deployed:
   - record a new canary report before changing alert limits or onboarding broader traffic.
 
 2. Web cabinet parity with Telegram
-- Baseline radar preferences and alert history are shipped in the cabinet.
+- Baseline radar preferences, alert history, and digest history are shipped in the cabinet.
 - Remaining parity:
-  - digest history.
+  - deep link from digest item to all linked alert rows when a digest contains multiple domains.
 
 3. Admin quality dashboard follow-up
 - Baseline admin quality report is shipped.
