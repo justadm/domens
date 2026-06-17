@@ -375,10 +375,10 @@ Response `200`:
 ### GET `/v1/admin/quality`
 Auth: admin session required.
 
-Admin quality and launch canary summary for the selected rolling window.
+Admin quality and launch canary summary for the selected UTC calendar-day window.
 
 Query:
-- `days` - rolling window, clamped to 1..90 days.
+- `days` - number of UTC calendar days ending today, clamped to 1..90 days.
 
 Response `200`:
 ```json
@@ -436,7 +436,7 @@ Response `200`:
 }
 ```
 
-`series` contains one UTC daily bucket for each day in the clamped window, including zero-filled days, ordered ascending by `date`.
+Totals and `series` use the same UTC calendar-day window. `series` contains one bucket for each day in the clamped window, including zero-filled days, ordered ascending by `date`.
 
 ### GET `/v1/admin/quality-report.md`
 Auth: admin session required.
@@ -445,7 +445,7 @@ Download-friendly Markdown snapshot of the same admin quality metrics used by
 `/v1/admin/quality`. The endpoint does not recalculate quality independently.
 
 Query:
-- `days` - rolling window, clamped by the shared quality metrics service to 1..90 days.
+- `days` - UTC calendar-day window, clamped by the shared quality metrics service to 1..90 days.
 
 Response `200`:
 - `Content-Type: text/markdown; charset=utf-8`

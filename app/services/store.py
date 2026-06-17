@@ -189,6 +189,19 @@ def _quality_series_day(value) -> str | None:
     return timestamp.date().isoformat()
 
 
+def build_alert_quality_window(days: int, now) -> tuple[int, datetime, datetime, list[str]]:
+    safe_days = max(1, min(int(days), 90))
+    current, _text = _normalize_monitor_quality_timestamp(now)
+    if current is None:
+        current = datetime.now(timezone.utc)
+    end_date = current.date()
+    start_date = end_date - timedelta(days=safe_days - 1)
+    since = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    until = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(safe_days)]
+    return safe_days, since, until, dates
+
+
 def build_alert_quality_series(
     *,
     days: int,
@@ -198,18 +211,8 @@ def build_alert_quality_series(
     suppression_created_at: list | tuple,
     monitor_events: list[dict],
 ) -> list[dict]:
-    safe_days = max(1, min(int(days), 90))
-    current, _text = _normalize_monitor_quality_timestamp(now)
-    if current is None:
-        current = datetime.now(timezone.utc)
-    end_date = current.date()
-    start_date = end_date - timedelta(days=safe_days - 1)
-    buckets = {
-        (start_date + timedelta(days=offset)).isoformat(): _empty_quality_series_bucket(
-            (start_date + timedelta(days=offset)).isoformat()
-        )
-        for offset in range(safe_days)
-    }
+    _safe_days, _since, _until, dates = build_alert_quality_window(days=days, now=now)
+    buckets = {day: _empty_quality_series_bucket(day) for day in dates}
 
     def increment_created_at(values, key: str) -> None:
         for value in values or []:
@@ -3355,46 +3358,58 @@ class PostgresStore:
             }
 
     def get_alert_quality_metrics(self, days: int = 7) -> dict:
-        safe_days = max(1, min(int(days), 90))
         now = datetime.now(timezone.utc)
-        since = now - timedelta(days=safe_days)
+        safe_days, since, until, _dates = build_alert_quality_window(days=days, now=now)
         with self._session() as session:
             alerts_total = int(
                 session.execute(
-                    select(func.count()).select_from(AlertModel).where(AlertModel.created_at >= since)
+                    select(func.count())
+                    .select_from(AlertModel)
+                    .where(AlertModel.created_at >= since, AlertModel.created_at < until)
                 ).scalar()
                 or 0
             )
             feedback_total = int(
                 session.execute(
-                    select(func.count()).select_from(AlertFeedbackModel).where(AlertFeedbackModel.created_at >= since)
+                    select(func.count())
+                    .select_from(AlertFeedbackModel)
+                    .where(AlertFeedbackModel.created_at >= since, AlertFeedbackModel.created_at < until)
                 ).scalar()
                 or 0
             )
             feedback_rows = session.execute(
                 select(AlertFeedbackModel.feedback_type, func.count())
-                .where(AlertFeedbackModel.created_at >= since)
+                .where(AlertFeedbackModel.created_at >= since, AlertFeedbackModel.created_at < until)
                 .group_by(AlertFeedbackModel.feedback_type)
             ).all()
             feedback_counts = {str(feedback_type): int(count or 0) for feedback_type, count in feedback_rows}
             suppressed_total = int(
                 session.execute(
-                    select(func.count()).select_from(AlertSuppressionModel).where(AlertSuppressionModel.created_at >= since)
+                    select(func.count())
+                    .select_from(AlertSuppressionModel)
+                    .where(AlertSuppressionModel.created_at >= since, AlertSuppressionModel.created_at < until)
                 ).scalar()
                 or 0
             )
             alert_created_at = session.execute(
-                select(AlertModel.created_at).where(AlertModel.created_at >= since)
+                select(AlertModel.created_at).where(AlertModel.created_at >= since, AlertModel.created_at < until)
             ).scalars().all()
             feedback_created_at = session.execute(
-                select(AlertFeedbackModel.created_at).where(AlertFeedbackModel.created_at >= since)
+                select(AlertFeedbackModel.created_at).where(
+                    AlertFeedbackModel.created_at >= since,
+                    AlertFeedbackModel.created_at < until,
+                )
             ).scalars().all()
             suppression_created_at = session.execute(
-                select(AlertSuppressionModel.created_at).where(AlertSuppressionModel.created_at >= since)
+                select(AlertSuppressionModel.created_at).where(
+                    AlertSuppressionModel.created_at >= since,
+                    AlertSuppressionModel.created_at < until,
+                )
             ).scalars().all()
             monitor_rows = session.execute(
                 select(BotEventModel.event_type, BotEventModel.payload, BotEventModel.telegram_chat_id, BotEventModel.created_at)
                 .where(BotEventModel.created_at >= since)
+                .where(BotEventModel.created_at < until)
                 .where(
                     or_(
                         func.lower(BotEventModel.event_type).like("monitor_%"),

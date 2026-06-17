@@ -8,7 +8,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.main import app
 from app.routers import admin as admin_router
 from app.routers.auth import AuthUserResponse
-from app.services.store import build_alert_feedback_ratios, build_alert_quality_series, summarize_monitor_quality_events
+from app.services.store import (
+    build_alert_feedback_ratios,
+    build_alert_quality_series,
+    build_alert_quality_window,
+    summarize_monitor_quality_events,
+)
 
 
 def _admin_quality_metrics(days: int = 7) -> dict:
@@ -319,6 +324,15 @@ def test_build_alert_feedback_ratios_groups_quality_signals() -> None:
         "negative_rate": 0.3,
         "total": 10,
     }
+
+
+def test_build_alert_quality_window_uses_utc_calendar_days() -> None:
+    safe_days, since, until, dates = build_alert_quality_window(days=3, now="2026-06-17T15:30:00+00:00")
+
+    assert safe_days == 3
+    assert since.isoformat() == "2026-06-15T00:00:00+00:00"
+    assert until.isoformat() == "2026-06-18T00:00:00+00:00"
+    assert dates == ["2026-06-15", "2026-06-16", "2026-06-17"]
 
 
 def test_build_alert_quality_series_zero_fills_daily_buckets() -> None:
