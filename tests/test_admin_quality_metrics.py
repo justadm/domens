@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.main import app
 from app.routers import admin as admin_router
 from app.routers.auth import AuthUserResponse
-from app.services.store import summarize_monitor_quality_events
+from app.services.store import build_alert_feedback_ratios, summarize_monitor_quality_events
 
 
 def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
@@ -26,6 +26,15 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
             "alerts_total": 2,
             "feedback_total": 1,
             "suppressed_total": 3,
+            "feedback_ratios": {
+                "more": 1,
+                "less": 0,
+                "never": 0,
+                "why": 0,
+                "positive_rate": 1.0,
+                "negative_rate": 0.0,
+                "total": 1,
+            },
             "monitor_runs_total": 4,
             "monitor_alerts_sent": 1,
             "monitor_digests_sent": 1,
@@ -46,6 +55,15 @@ def test_admin_quality_endpoint_returns_metrics(monkeypatch) -> None:
         "alerts_total": 2,
         "feedback_total": 1,
         "suppressed_total": 3,
+        "feedback_ratios": {
+            "more": 1,
+            "less": 0,
+            "never": 0,
+            "why": 0,
+            "positive_rate": 1.0,
+            "negative_rate": 0.0,
+            "total": 1,
+        },
         "monitor_runs_total": 4,
         "monitor_alerts_sent": 1,
         "monitor_digests_sent": 1,
@@ -156,3 +174,27 @@ def test_summarize_monitor_quality_events_orders_duplicate_timestamps_by_instant
             "last_sent_at": "2026-06-17T07:00:00+00:00",
         }
     ]
+
+
+def test_build_alert_feedback_ratios_handles_zero_total() -> None:
+    assert build_alert_feedback_ratios({}) == {
+        "more": 0,
+        "less": 0,
+        "never": 0,
+        "why": 0,
+        "positive_rate": 0.0,
+        "negative_rate": 0.0,
+        "total": 0,
+    }
+
+
+def test_build_alert_feedback_ratios_groups_quality_signals() -> None:
+    assert build_alert_feedback_ratios({"more": 3, "less": 2, "never": 1, "why": 4}) == {
+        "more": 3,
+        "less": 2,
+        "never": 1,
+        "why": 4,
+        "positive_rate": 0.3,
+        "negative_rate": 0.3,
+        "total": 10,
+    }

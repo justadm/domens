@@ -70,11 +70,22 @@ class CopilotRuntimeResponse(BaseModel):
     status: dict
 
 
+class FeedbackRatiosResponse(BaseModel):
+    more: int = 0
+    less: int = 0
+    never: int = 0
+    why: int = 0
+    positive_rate: float = 0.0
+    negative_rate: float = 0.0
+    total: int = 0
+
+
 class AdminQualityResponse(BaseModel):
     days: int
     alerts_total: int
     feedback_total: int
     suppressed_total: int
+    feedback_ratios: FeedbackRatiosResponse = Field(default_factory=FeedbackRatiosResponse)
     monitor_runs_total: int = 0
     monitor_alerts_sent: int = 0
     monitor_digests_sent: int = 0

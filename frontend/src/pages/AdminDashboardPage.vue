@@ -17,6 +17,9 @@
     <div class="kpi-grid quality-grid" v-if="!loading && quality">
       <article class="kpi"><p>Alerts 7d</p><h3>{{ quality.alerts_total }}</h3></article>
       <article class="kpi"><p>Feedback 7d</p><h3>{{ quality.feedback_total }}</h3></article>
+      <article class="kpi"><p>Positive feedback 7d</p><h3>{{ formatRate(quality.feedback_ratios.positive_rate) }}</h3></article>
+      <article class="kpi"><p>Negative feedback 7d</p><h3>{{ formatRate(quality.feedback_ratios.negative_rate) }}</h3></article>
+      <article class="kpi"><p>Why clicked 7d</p><h3>{{ quality.feedback_ratios.why }}</h3></article>
       <article class="kpi"><p>Suppressed 7d</p><h3>{{ quality.suppressed_total }}</h3></article>
       <article class="kpi"><p>Monitor runs 7d</p><h3>{{ quality.monitor_runs_total }}</h3></article>
       <article class="kpi"><p>Checked 7d</p><h3>{{ quality.monitor_checked_total }}</h3></article>
@@ -28,6 +31,23 @@
       <article class="kpi"><p>Radar mode</p><h3>{{ radarMode }}</h3></article>
       <article class="kpi"><p>Target cooldown</p><h3>{{ quality.monitor_alert_target_cooldown_minutes }}m</h3></article>
     </div>
+
+    <article class="panel quality-panel" v-if="!loading && quality">
+      <h3>Feedback distribution</h3>
+      <table>
+        <thead>
+          <tr><th>signal</th><th>count</th><th>share</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in feedbackDistribution" :key="item.key">
+            <td>{{ item.label }}</td>
+            <td>{{ item.count }}</td>
+            <td>{{ item.share }}</td>
+          </tr>
+          <tr v-if="quality.feedback_ratios.total === 0"><td colspan="3">Пусто</td></tr>
+        </tbody>
+      </table>
+    </article>
 
     <article class="panel quality-panel" v-if="!loading && quality">
       <h3>Canary skip reasons</h3>
@@ -113,6 +133,15 @@ type QualityResp = {
   days: number;
   alerts_total: number;
   feedback_total: number;
+  feedback_ratios: {
+    more: number;
+    less: number;
+    never: number;
+    why: number;
+    positive_rate: number;
+    negative_rate: number;
+    total: number;
+  };
   suppressed_total: number;
   monitor_runs_total: number;
   monitor_alerts_sent: number;
@@ -150,6 +179,21 @@ const events = ref<EventsPage>({ items: [] });
 const skipReasons = computed(() =>
   Object.entries(quality.value?.monitor_skip_reasons || {}).sort((a, b) => b[1] - a[1]),
 );
+const formatRate = (value: number) => `${Math.round(Number(value || 0) * 100)}%`;
+const feedbackDistribution = computed(() => {
+  const ratios = quality.value?.feedback_ratios;
+  const total = ratios?.total || 0;
+  if (!ratios || total === 0) return [];
+  return [
+    { key: 'more', label: 'More like this', count: ratios.more },
+    { key: 'less', label: 'Less like this', count: ratios.less },
+    { key: 'never', label: 'Never repeat', count: ratios.never },
+    { key: 'why', label: 'Why clicked', count: ratios.why },
+  ].map((item) => ({
+    ...item,
+    share: formatRate(item.count / total),
+  }));
+});
 const radarMode = computed(() => {
   if (!quality.value?.monitor_enabled) return 'OFF';
   if (quality.value.monitor_watchlist_only && !quality.value.monitor_admin_fanout_enabled) return 'canary';

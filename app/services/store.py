@@ -142,6 +142,33 @@ def _monitor_quality_timestamp_is_after(
     return candidate_text > current_text
 
 
+def build_alert_feedback_ratios(feedback_counts: dict[str, int]) -> dict:
+    normalized = {
+        "more": 0,
+        "less": 0,
+        "never": 0,
+        "why": 0,
+    }
+    total = 0
+    for feedback_type, count in (feedback_counts or {}).items():
+        safe_type = str(feedback_type).strip().lower()
+        safe_count = int(count or 0)
+        if safe_count <= 0:
+            continue
+        total += safe_count
+        if safe_type in normalized:
+            normalized[safe_type] += safe_count
+
+    positive = normalized["more"]
+    negative = normalized["less"] + normalized["never"]
+    return {
+        **normalized,
+        "positive_rate": round(positive / total, 4) if total else 0.0,
+        "negative_rate": round(negative / total, 4) if total else 0.0,
+        "total": total,
+    }
+
+
 def summarize_monitor_quality_events(events: list[dict]) -> dict:
     monitor_runs_total = 0
     monitor_alerts_sent = 0
@@ -3229,6 +3256,12 @@ class PostgresStore:
                 ).scalar()
                 or 0
             )
+            feedback_rows = session.execute(
+                select(AlertFeedbackModel.feedback_type, func.count())
+                .where(AlertFeedbackModel.created_at >= since)
+                .group_by(AlertFeedbackModel.feedback_type)
+            ).all()
+            feedback_counts = {str(feedback_type): int(count or 0) for feedback_type, count in feedback_rows}
             suppressed_total = int(
                 session.execute(
                     select(func.count()).select_from(AlertSuppressionModel).where(AlertSuppressionModel.created_at >= since)
@@ -3264,6 +3297,7 @@ class PostgresStore:
                 "alerts_total": alerts_total,
                 "feedback_total": feedback_total,
                 "suppressed_total": suppressed_total,
+                "feedback_ratios": build_alert_feedback_ratios(feedback_counts),
                 **monitor_metrics,
             }
 

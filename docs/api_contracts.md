@@ -377,6 +377,15 @@ Response `200`:
   "alerts_total": 2,
   "feedback_total": 1,
   "suppressed_total": 3,
+  "feedback_ratios": {
+    "more": 1,
+    "less": 0,
+    "never": 0,
+    "why": 0,
+    "positive_rate": 1.0,
+    "negative_rate": 0.0,
+    "total": 1
+  },
   "monitor_runs_total": 24,
   "monitor_alerts_sent": 1,
   "monitor_digests_sent": 1,

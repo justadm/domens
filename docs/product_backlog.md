@@ -42,6 +42,7 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Sensitive operational endpoints for manual checks, candidate ingestion, alert triggering, and monitor runs require an admin session.
 - Admin quality dashboard/API shows launch canary metrics:
   - alert, feedback, suppression totals;
+  - feedback distribution ratios as a proxy quality signal;
   - monitor runs, checked candidates, sent alerts/digests;
   - skip reasons and Telegram delivery errors;
   - registration and monitoring safety flags.
@@ -70,7 +71,6 @@ The Telegram-first launch baseline is now implemented and deployed:
 - Baseline admin quality report is shipped.
 - Follow-up:
   - add time-series trend view;
-  - add feedback precision ratios;
   - add export/share link for auditor reports.
 - Duplicate/same-domain grouping is shipped in admin quality API and dashboard.
 
