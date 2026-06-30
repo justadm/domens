@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     reg_ru_username: str = ""
     reg_ru_password: str = ""
 
-    max_base_url: str = "https://platform-api.max.ru"
+    max_base_url: str = "https://platform-api2.max.ru"
     max_token: str = ""
     max_chat_id: str = ""
     max_oauth_enabled: bool = False

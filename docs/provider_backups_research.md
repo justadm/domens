@@ -50,7 +50,8 @@
 - `POST /answers?callback_id=<id>` — ответ на callback
 - `GET /updates` — polling апдейтов
 - `Authorization: <MAX_TOKEN>`
-- Базовый URL: `https://platform-api.max.ru`
+- Базовый URL: `https://platform-api2.max.ru`
+- До 2026-07-19 MAX требует перейти со старого `https://platform-api.max.ru` на `https://platform-api2.max.ru` и доверять цепочке сертификата Минцифры.
 
 Что подключено в проект:
 - Отправка алертов/текста в MAX (`send_max_alert`, `send_max_text`).
